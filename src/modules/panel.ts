@@ -72,11 +72,11 @@ export class GroupsPanel {
       pluginID: "annotation-compositor@jsglazer.com",
       header: {
         l10nID: "annotationcompositor-section-header",
-        icon: "chrome://zotero/skin/16/universal/tag.svg",
+        icon: "chrome://annotationcompositor/content/icons/icon-16.svg",
       },
       sidenav: {
         l10nID: "annotationcompositor-section-header",
-        icon: "chrome://zotero/skin/20/universal/tag.svg",
+        icon: "chrome://annotationcompositor/content/icons/icon-20.svg",
       },
       onRender: ({ body, item }) => {
         this.lastBody = { body, item };

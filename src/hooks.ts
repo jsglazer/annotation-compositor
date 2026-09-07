@@ -103,6 +103,14 @@ export async function onStartup(rootURI: string): Promise<void> {
   addon.readerMenu.register();
   addon.data.initialized = true;
 
+  // Unregistered automatically by Zotero when the plugin shuts down.
+  void Zotero.PreferencePanes.register({
+    pluginID: "annotation-compositor@jsglazer.com",
+    src: rootURI + "chrome/content/preferences.xhtml",
+    label: "Annotation Compositor",
+    image: "chrome://annotationcompositor/content/icons/icon-20.svg",
+  });
+
   if (!getWarningAcknowledged()) {
     alert(
       "Annotation Compositor",

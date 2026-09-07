@@ -1,0 +1,65 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<groupbox>
+  <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
+
+  <hbox align="center">
+    <html:label
+      for="annotationcompositor-pref-tagPrefix"
+      data-l10n-id="pref-tag-prefix-label"
+    ></html:label>
+    <html:input
+      type="text"
+      id="annotationcompositor-pref-tagPrefix"
+      preference="__prefsPrefix__.tagPrefix"
+    ></html:input>
+  </hbox>
+
+  <hbox align="center">
+    <html:label
+      for="annotationcompositor-pref-tagType"
+      data-l10n-id="pref-tag-type-label"
+    ></html:label>
+    <menulist id="annotationcompositor-pref-tagType" preference="__prefsPrefix__.tagType">
+      <menupopup>
+        <menuitem value="0" data-l10n-id="pref-tag-type-manual"></menuitem>
+        <menuitem value="1" data-l10n-id="pref-tag-type-automatic"></menuitem>
+      </menupopup>
+    </menulist>
+  </hbox>
+  <description data-l10n-id="pref-tag-type-description"></description>
+
+  <separator class="thin"></separator>
+
+  <checkbox
+    id="annotationcompositor-pref-navigateOnClick"
+    preference="__prefsPrefix__.navigateOnClick"
+    data-l10n-id="pref-navigate-on-click"
+  />
+  <checkbox
+    id="annotationcompositor-pref-persistStickyGroup"
+    preference="__prefsPrefix__.persistStickyGroup"
+    data-l10n-id="pref-persist-sticky-group"
+  />
+  <checkbox
+    id="annotationcompositor-pref-includeSubfolders"
+    preference="__prefsPrefix__.includeSubfolders"
+    data-l10n-id="pref-include-subfolders"
+  />
+
+  <separator class="thin"></separator>
+
+  <hbox align="center">
+    <html:label
+      for="annotationcompositor-pref-templateId"
+      data-l10n-id="pref-template-label"
+    ></html:label>
+    <menulist id="annotationcompositor-pref-templateId" preference="__prefsPrefix__.templateId">
+      <menupopup>
+        <menuitem value="markdown" data-l10n-id="pref-template-markdown"></menuitem>
+        <menuitem value="html" data-l10n-id="pref-template-html"></menuitem>
+      </menupopup>
+    </menulist>
+  </hbox>
+</groupbox>
