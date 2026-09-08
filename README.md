@@ -21,10 +21,10 @@ Group tags are **manual (type 0)** tags by default, so Zotero's _Delete Automati
 - **Drag and drop** — dragging an annotation onto a folder **moves** it (adds the destination, removes the source, in one transaction); **⌘-drag** (Alt elsewhere) **adds** without removing. Dragging a folder reparents that folder and its whole subtree
 - **Folder operations** — create, rename, delete and reparent, executed as transactional tag-path rewrites across every affected annotation, each preceded by a snapshot
 - **Multi-select** — shift-click selects a contiguous range of annotations; ctrl/cmd-click toggles one, for drag, folder-menu, and drop-target operations that act on the whole selection
-- **Click to navigate** — clicking an annotation row opens the reader (if it isn't already open) and scrolls to it (toggleable); double-click always navigates
+- **Click to navigate** — clicking an annotation row opens the reader (if it isn't already open, or brings its tab to the front if it is) and scrolls to it (toggleable); double-click copies the annotation's text and comment to the clipboard
 - **Selection sync** — clicking a highlight in the reader text or in Zotero's own native annotations sidebar selects and scrolls to the matching row in the Groups panel, in both directions
 - **Reader context menu** — "Add to group ▸" on right-click, nested when the reader supports submenus and flat `A > B > C` labels when it does not. Above 25 folders the menu collapses to a recents list plus a modal picker
-- **Panel context menu** — right-click an annotation row for "Add to folder", listing the item's existing folders
+- **Panel context menu** — right-click an annotation for "Add to folder", or a folder for Rename/New subfolder/Delete/Pin sticky group/Clear sticky group, in a popup menu at the cursor
 - **Colour rules** — map an annotation colour to one or more folders, library-wide with optional per-item overrides. Rules fire at creation time only and are purely additive
 - **Sticky group** — pin a folder to a reader tab so new annotations join it automatically; optionally persisted across sessions
 - **Templated export** — Mustache-subset templates (`{{var}}`, `{{#section}}`, `{{^inverted}}`, self-referencing partials for subfolder traversal) with Markdown and HTML defaults, include-subfolders and include-ungrouped toggles, ordering by `annotationSortIndex`, to clipboard or file. The document title uses the item's Better BibTeX citation key when one is available, falling back to its display title
@@ -50,6 +50,7 @@ The path separator `/` is reserved, so a folder name may not contain it. Names a
 | `tagType`                          | `0` (manual)        | Manual or automatic tags for group membership                                         |
 | `navigateOnClick`                  | `true`              | Clicking an annotation row scrolls the reader to it                                   |
 | `persistStickyGroup`               | `false`             | Remember sticky groups across sessions                                                |
+| `useCustomSelectionColor` / `selectionColor` | `false` / `#2ea8e5` | Override the selected-row background with a custom highlight color         |
 | `templateId` / `includeSubfolders` / `includeUngrouped` | `markdown` / `true` / `true` | Export defaults                                                        |
 
 ## Development
