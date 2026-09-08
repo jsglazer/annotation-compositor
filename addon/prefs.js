@@ -8,4 +8,5 @@ pref("__prefsPrefix__.libraryColorRules", "[]");
 pref("__prefsPrefix__.itemColorRules", "{}");
 pref("__prefsPrefix__.templateId", "markdown");
 pref("__prefsPrefix__.includeSubfolders", true);
+pref("__prefsPrefix__.includeUngrouped", true);
 pref("__prefsPrefix__.warningAcknowledged", false);

@@ -9,6 +9,7 @@
  */
 import { buildViewModel, collectExistingPaths, collectFolderKeys } from "../core/tree.js";
 import { keyToPath, pathKey, validateFolderName } from "../core/path.js";
+import { FLAT_SEPARATOR } from "../core/menuModel.js";
 import {
   assignAnnotations,
   deleteFolder,
@@ -18,7 +19,7 @@ import {
 } from "../core/rewrite.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
 import { confirm, promptText, select } from "../adapters/dialogs.js";
-import { navigateToAnnotation, openAndNavigate } from "../adapters/reader.js";
+import { openAndNavigate } from "../adapters/reader.js";
 import type { StickyGroupRegistry } from "../adapters/reader.js";
 import type { GroupService } from "./groupService.js";
 import { getNavigateOnClick, getTagPrefix } from "./prefs.js";
@@ -34,6 +35,10 @@ interface PanelState {
   selection: Set<string>;
   /** Folder keys used recently, most recent first (feeds the reader menu). */
   recents: string[];
+  /** Annotation ids in rendered order, for shift-click range selection. */
+  visibleOrder: string[];
+  /** Shift-click range anchor: the last annotation clicked without a modifier. */
+  lastClickedId: string | null;
 }
 
 interface DragPayload {
@@ -109,6 +114,40 @@ export class GroupsPanel {
     }
   }
 
+  /**
+   * A reader reported that `annotationKey` (on `attachmentID`) became its
+   * selection — from a click on the highlight in the text or in Zotero's own
+   * native sidebar. If that annotation belongs to the item currently shown,
+   * select and scroll to its row here too.
+   */
+  handleExternalSelection(attachmentID: number, annotationKey: string): void {
+    if (this.lastBody === null) {
+      return;
+    }
+    const { body, item } = this.lastBody;
+    if (!body.isConnected) {
+      return;
+    }
+    const set = this.host.service.load(item);
+    const belongs = set.attachments.some((attachment) => attachment.id === attachmentID);
+    if (!belongs || !set.itemsByKey.has(annotationKey)) {
+      return;
+    }
+    const state = this.state(item.key);
+    if (state.selection.size === 1 && state.selection.has(annotationKey)) {
+      return;
+    }
+    state.selection.clear();
+    state.selection.add(annotationKey);
+    state.lastClickedId = annotationKey;
+    this.render(body, item);
+    body
+      .querySelector<HTMLElement>(
+        `.ac-annotation[data-id="${CSS.escape(annotationKey)}"]`,
+      )
+      ?.scrollIntoView({ block: "nearest" });
+  }
+
   /** Add the panel stylesheet once per document, tracked for shutdown removal. */
   private injectStylesheet(doc: Document): void {
     if (doc.querySelector("link[data-annotation-compositor]") !== null) {
@@ -130,6 +169,8 @@ export class GroupsPanel {
         filter: "",
         selection: new Set<string>(),
         recents: [],
+        visibleOrder: [],
+        lastClickedId: null,
       };
       this.stateByItem.set(itemKey, state);
     }
@@ -142,6 +183,47 @@ export class GroupsPanel {
       pendingFolderKeys: [...state.pendingFolderKeys],
       filter: state.filter,
     };
+  }
+
+  /**
+   * Annotation ids in the order their rows will be built — mirrors
+   * `buildFolder`/`buildUngrouped` exactly (child folders before a folder's
+   * own annotations, collapsed subtrees skipped) so shift-click ranges match
+   * what is on screen.
+   */
+  private renderOrder(
+    folders: readonly FolderNode[],
+    ungrouped: readonly AnnotationRecord[],
+  ): string[] {
+    const order: string[] = [];
+    const walk = (nodes: readonly FolderNode[]): void => {
+      for (const node of nodes) {
+        walk(node.children);
+        if (!node.collapsed) {
+          order.push(...node.annotationIds);
+        }
+      }
+    };
+    walk(folders);
+    order.push(...ungrouped.map((annotation) => annotation.id));
+    return order;
+  }
+
+  /** Shift-click: select the contiguous range from the last anchor to `id`. */
+  private extendSelection(state: PanelState, id: string): void {
+    const anchor = state.lastClickedId;
+    const from = anchor === null ? -1 : state.visibleOrder.indexOf(anchor);
+    const to = state.visibleOrder.indexOf(id);
+    if (from === -1 || to === -1) {
+      state.selection.clear();
+      state.selection.add(id);
+      return;
+    }
+    const [start, end] = from <= to ? [from, to] : [to, from];
+    state.selection.clear();
+    for (let i = start; i <= end; i += 1) {
+      state.selection.add(state.visibleOrder[i]);
+    }
   }
 
   private noteRecent(state: PanelState, key: string): void {
@@ -159,6 +241,7 @@ export class GroupsPanel {
     const prefix = getTagPrefix();
     const records = this.host.service.load(item).records;
     const model = buildViewModel(records, prefix, this.uiState(state));
+    state.visibleOrder = this.renderOrder(model.folders, model.ungrouped);
 
     // Single DocumentFragment swap: the whole panel is built off-document and
     // installed in one operation, so the reader never sees a partial tree.
@@ -393,25 +476,34 @@ export class GroupsPanel {
     row.append(swatch, text, page);
 
     row.addEventListener("click", (event) => {
-      const multi = event.ctrlKey || event.metaKey || event.shiftKey;
-      if (multi) {
+      const range = event.shiftKey;
+      const toggle = event.ctrlKey || event.metaKey;
+      if (range) {
+        this.extendSelection(state, annotation.id);
+      } else if (toggle) {
         if (state.selection.has(annotation.id)) {
           state.selection.delete(annotation.id);
         } else {
           state.selection.add(annotation.id);
         }
+        state.lastClickedId = annotation.id;
       } else {
         state.selection.clear();
         state.selection.add(annotation.id);
+        state.lastClickedId = annotation.id;
       }
       this.refresh();
-      if (!multi && getNavigateOnClick()) {
-        this.navigate(item, annotation.id);
+      if (!range && !toggle && getNavigateOnClick()) {
+        void this.navigateAlways(item, annotation.id);
       }
     });
     row.addEventListener("dblclick", () => {
       // Always navigates, even when the click-to-navigate pref is off.
       void this.navigateAlways(item, annotation.id);
+    });
+    row.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      void this.annotationMenu(item, state, annotation);
     });
     row.addEventListener("dragstart", (event) => {
       const ids = state.selection.has(annotation.id)
@@ -428,11 +520,33 @@ export class GroupsPanel {
 
   // -------------------------------------------------------------- interaction
 
-  private navigate(item: Zotero.Item, annotationKey: string): void {
-    const annotation = this.host.service.load(item).itemsByKey.get(annotationKey);
-    if (annotation !== undefined) {
-      navigateToAnnotation(annotation);
+  /** Right-click on an annotation: add it (and the rest of the selection) to an existing folder. */
+  private async annotationMenu(
+    item: Zotero.Item,
+    state: PanelState,
+    annotation: AnnotationRecord,
+  ): Promise<void> {
+    const ids = state.selection.has(annotation.id)
+      ? [...state.selection].filter((id) => !id.startsWith("folder:"))
+      : [annotation.id];
+    const records = this.host.service.load(item).records;
+    const paths = collectExistingPaths(records, getTagPrefix());
+    if (paths.length === 0) {
+      this.error("No folders exist yet for this item.");
+      return;
     }
+    const labels = paths.map((path) => path.join(FLAT_SEPARATOR));
+    const index = select("Add to folder", "Choose a folder:", labels);
+    if (index === null || paths[index] === undefined) {
+      return;
+    }
+    const target = paths[index];
+    const outcome = await this.host.service.mutate(item, "pre-assign", (recs, prefix) =>
+      assignAnnotations(recs, prefix, ids, target, { mode: "add" }),
+    );
+    this.noteRecent(state, pathKey(target));
+    this.report(outcome);
+    this.refresh();
   }
 
   private async navigateAlways(item: Zotero.Item, annotationKey: string): Promise<void> {

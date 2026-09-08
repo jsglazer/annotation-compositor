@@ -4,7 +4,7 @@
  */
 import { NotifierLoopGuard } from "./core/guard.js";
 import { ReaderMenuAdapter } from "./adapters/contextMenu.js";
-import { StickyGroupRegistry } from "./adapters/reader.js";
+import { ReaderSelectionWatcher, StickyGroupRegistry } from "./adapters/reader.js";
 import { CompositorToolkit } from "./adapters/toolkit.js";
 import { ExportService } from "./modules/exportService.js";
 import { GroupService } from "./modules/groupService.js";
@@ -30,6 +30,7 @@ export default class Addon {
   readonly panel: GroupsPanel;
   readonly notifier: NotifierService;
   readonly readerMenu: ReaderMenuAdapter;
+  readonly readerSelection: ReaderSelectionWatcher;
 
   constructor(
     build: (addon: Addon) => {
@@ -45,5 +46,8 @@ export default class Addon {
     this.panel = built.panel;
     this.notifier = built.notifier;
     this.readerMenu = built.readerMenu;
+    this.readerSelection = new ReaderSelectionWatcher((attachmentID, annotationKey) =>
+      this.panel.handleExternalSelection(attachmentID, annotationKey),
+    );
   }
 }

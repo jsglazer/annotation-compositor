@@ -8,6 +8,7 @@ export type FluentMessageId =
   | 'export-selected'
   | 'new-folder'
   | 'pref-include-subfolders'
+  | 'pref-include-ungrouped'
   | 'pref-navigate-on-click'
   | 'pref-persist-sticky-group'
   | 'pref-tag-prefix-label'

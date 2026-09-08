@@ -8,9 +8,9 @@
 import type { FolderPath } from "../core/types.js";
 
 /** A reader instance we have validated far enough to use. */
-type ValidatedReader = _ZoteroTypes.ReaderInstance;
+type ValidatedReader = _ZoteroTypes.ReaderInstance & { itemID: number };
 
-function readers(): ValidatedReader[] {
+export function readers(): ValidatedReader[] {
   const list = (Zotero.Reader?._readers ?? []) as unknown[];
   return list.filter(
     (candidate): candidate is ValidatedReader =>
@@ -69,6 +69,68 @@ export async function openAndNavigate(annotation: Zotero.Item): Promise<boolean>
     return findReader(attachmentID) !== null;
   }
   return navigateToAnnotation(annotation);
+}
+
+/**
+ * Reads a reader's currently-selected annotation id, straight out of its
+ * internal React state. There is no public "selection changed" event for the
+ * reader (text clicks and the native sidebar both land here, but neither is
+ * observable from outside), so `ReaderSelectionWatcher` below polls this.
+ * Any unrecognised shape is treated as "no selection" rather than thrown.
+ */
+function selectedAnnotationKey(reader: ValidatedReader): string | null {
+  const state = (
+    reader as unknown as {
+      _internalReader?: { _state?: { selectedAnnotationIDs?: unknown } };
+    }
+  )._internalReader?._state;
+  const ids = state?.selectedAnnotationIDs;
+  return Array.isArray(ids) && ids.length === 1 && typeof ids[0] === "string"
+    ? ids[0]
+    : null;
+}
+
+/** Reports the moment a reader's single-annotation selection changes. */
+export class ReaderSelectionWatcher {
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private readonly lastByAttachment = new Map<number, string | null>();
+
+  constructor(
+    private readonly onSelect: (attachmentID: number, annotationKey: string) => void,
+    private readonly intervalMs: number = 400,
+  ) {}
+
+  register(): void {
+    if (this.timer !== null) {
+      return;
+    }
+    this.timer = setInterval(() => this.poll(), this.intervalMs);
+  }
+
+  unregister(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.lastByAttachment.clear();
+  }
+
+  private poll(): void {
+    const seen = new Set<number>();
+    for (const reader of readers()) {
+      seen.add(reader.itemID);
+      const key = selectedAnnotationKey(reader);
+      if (key !== null && key !== this.lastByAttachment.get(reader.itemID)) {
+        this.onSelect(reader.itemID, key);
+      }
+      this.lastByAttachment.set(reader.itemID, key);
+    }
+    for (const attachmentID of [...this.lastByAttachment.keys()]) {
+      if (!seen.has(attachmentID)) {
+        this.lastByAttachment.delete(attachmentID);
+      }
+    }
+  }
 }
 
 /** Sticky-group state, keyed by reader tab id. */

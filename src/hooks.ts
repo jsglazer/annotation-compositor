@@ -101,6 +101,7 @@ export async function onStartup(rootURI: string): Promise<void> {
   addon.panel.register();
   addon.notifier.register();
   addon.readerMenu.register();
+  addon.readerSelection.register();
   addon.data.initialized = true;
 
   // Unregistered automatically by Zotero when the plugin shuts down.
@@ -135,6 +136,7 @@ export function onShutdown(): void {
   addon.notifier.unregister();
   addon.readerMenu.unregister();
   addon.readerMenu.resetProbe();
+  addon.readerSelection.unregister();
   addon.panel.unregister();
   addon.sticky.clear();
   addon.guard.reset();

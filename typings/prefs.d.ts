@@ -16,6 +16,7 @@ declare namespace _ZoteroTypes {
       "itemColorRules": string;
       "templateId": string;
       "includeSubfolders": boolean;
+      "includeUngrouped": boolean;
       "warningAcknowledged": boolean;
     };
   }

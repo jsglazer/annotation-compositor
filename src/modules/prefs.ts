@@ -18,6 +18,7 @@ export const PREF_KEYS = {
   itemColorRules: `${BRANCH}.itemColorRules`,
   templateId: `${BRANCH}.templateId`,
   includeSubfolders: `${BRANCH}.includeSubfolders`,
+  includeUngrouped: `${BRANCH}.includeUngrouped`,
   warningAcknowledged: `${BRANCH}.warningAcknowledged`,
 } as const;
 
@@ -125,6 +126,14 @@ export function getIncludeSubfolders(): boolean {
 
 export function setIncludeSubfolders(value: boolean): void {
   Zotero.Prefs.set(PREF_KEYS.includeSubfolders, value, true);
+}
+
+export function getIncludeUngrouped(): boolean {
+  return readBool(PREF_KEYS.includeUngrouped, true);
+}
+
+export function setIncludeUngrouped(value: boolean): void {
+  Zotero.Prefs.set(PREF_KEYS.includeUngrouped, value, true);
 }
 
 /** First-run warning about "Delete Automatic Tags in This Library". */

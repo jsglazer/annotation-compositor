@@ -11,14 +11,29 @@ import { TEMPLATE_PRESETS, findPreset } from "../core/defaultTemplates.js";
 import type { TemplatePreset } from "../core/defaultTemplates.js";
 import type { FolderPath } from "../core/types.js";
 import { confirm, select } from "../adapters/dialogs.js";
+import { getCitationKey } from "../adapters/citation.js";
 import type { GroupService } from "./groupService.js";
 import {
   getIncludeSubfolders,
   getTagPrefix,
   getTemplateId,
   setIncludeSubfolders,
+  setIncludeUngrouped,
   setTemplateId,
 } from "./prefs.js";
+
+/** The citable bibliography item for `item` — itself, or its regular parent. */
+function citableItem(item: Zotero.Item): Zotero.Item {
+  if (item.isRegularItem()) {
+    return item;
+  }
+  return item.parentItem ?? item;
+}
+
+/** Citation key when Better BibTeX has one, otherwise the display title. */
+function exportTitle(item: Zotero.Item): string {
+  return getCitationKey(citableItem(item)) ?? item.getDisplayTitle();
+}
 
 export class ExportService {
   constructor(private readonly service: GroupService) {}
@@ -35,7 +50,7 @@ export class ExportService {
       selectedPaths,
       includeSubfolders,
       includeUngrouped,
-      title: item.getDisplayTitle(),
+      title: exportTitle(item),
     });
     return renderTemplate(preset.template, context, { partials: preset.partials });
   }
@@ -64,9 +79,21 @@ export class ExportService {
     setIncludeSubfolders(includeSubfolders);
     void getIncludeSubfolders();
 
+    const includeUngrouped = confirm(
+      "Export annotations",
+      "Include ungrouped annotations?",
+    );
+    setIncludeUngrouped(includeUngrouped);
+
     let output: string;
     try {
-      output = this.render(item, selectedPaths, preset, includeSubfolders);
+      output = this.render(
+        item,
+        selectedPaths,
+        preset,
+        includeSubfolders,
+        includeUngrouped,
+      );
     } catch (error) {
       const message =
         error instanceof TemplateError
