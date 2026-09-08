@@ -18,6 +18,8 @@ declare namespace _ZoteroTypes {
       "includeSubfolders": boolean;
       "includeUngrouped": boolean;
       "warningAcknowledged": boolean;
+      "useCustomSelectionColor": boolean;
+      "selectionColor": string;
     };
   }
 }

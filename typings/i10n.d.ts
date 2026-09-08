@@ -11,6 +11,7 @@ export type FluentMessageId =
   | 'pref-include-ungrouped'
   | 'pref-navigate-on-click'
   | 'pref-persist-sticky-group'
+  | 'pref-selection-color-label'
   | 'pref-tag-prefix-label'
   | 'pref-tag-type-automatic'
   | 'pref-tag-type-description'
@@ -20,6 +21,7 @@ export type FluentMessageId =
   | 'pref-template-label'
   | 'pref-template-markdown'
   | 'pref-title'
+  | 'pref-use-custom-selection-color'
   | 'restore-grouping'
   | 'section-header'
   | 'ungrouped';

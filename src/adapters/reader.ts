@@ -51,6 +51,10 @@ export function navigateToAnnotation(annotation: Zotero.Item): boolean {
     return false;
   }
   try {
+    // navigate() only scrolls within the reader itself — it never brings a
+    // background reader tab to the foreground, which made clicks silently
+    // no-op whenever the annotation's reader tab wasn't already selected.
+    Zotero.getMainWindow()?.Zotero_Tabs.select(reader.tabID);
     reader.navigate({ annotationKey: annotation.key });
     return true;
   } catch {

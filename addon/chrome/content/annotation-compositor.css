@@ -43,7 +43,9 @@
 }
 
 .ac-selected {
-  background-color: var(--color-accent-alt, rgba(0, 0, 0, 0.08));
+  /* --ac-selection-color is set inline only when the user opts into a custom
+     highlight color; otherwise it is unset and the theme default applies. */
+  background-color: var(--ac-selection-color, var(--color-accent-alt, rgba(0, 0, 0, 0.08)));
 }
 
 .ac-droptarget {

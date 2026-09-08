@@ -20,9 +20,12 @@ export const PREF_KEYS = {
   includeSubfolders: `${BRANCH}.includeSubfolders`,
   includeUngrouped: `${BRANCH}.includeUngrouped`,
   warningAcknowledged: `${BRANCH}.warningAcknowledged`,
+  useCustomSelectionColor: `${BRANCH}.useCustomSelectionColor`,
+  selectionColor: `${BRANCH}.selectionColor`,
 } as const;
 
 export const DEFAULT_TAG_PREFIX = "grp";
+export const DEFAULT_SELECTION_COLOR = "#2ea8e5";
 
 function readString(key: string, fallback: string): string {
   const value = Zotero.Prefs.get(key, true);
@@ -134,6 +137,23 @@ export function getIncludeUngrouped(): boolean {
 
 export function setIncludeUngrouped(value: boolean): void {
   Zotero.Prefs.set(PREF_KEYS.includeUngrouped, value, true);
+}
+
+export function getUseCustomSelectionColor(): boolean {
+  return readBool(PREF_KEYS.useCustomSelectionColor, false);
+}
+
+export function setUseCustomSelectionColor(value: boolean): void {
+  Zotero.Prefs.set(PREF_KEYS.useCustomSelectionColor, value, true);
+}
+
+/** Custom background colour for a selected row in the panel. */
+export function getSelectionColor(): string {
+  return readString(PREF_KEYS.selectionColor, DEFAULT_SELECTION_COLOR);
+}
+
+export function setSelectionColor(color: string): void {
+  Zotero.Prefs.set(PREF_KEYS.selectionColor, color, true);
 }
 
 /** First-run warning about "Delete Automatic Tags in This Library". */

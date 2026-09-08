@@ -18,11 +18,17 @@ import {
   unassignAnnotations,
 } from "../core/rewrite.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
-import { confirm, promptText, select } from "../adapters/dialogs.js";
+import { confirm, promptText } from "../adapters/dialogs.js";
+import { openPopupMenu } from "../adapters/popupMenu.js";
 import { openAndNavigate } from "../adapters/reader.js";
 import type { StickyGroupRegistry } from "../adapters/reader.js";
 import type { GroupService } from "./groupService.js";
-import { getNavigateOnClick, getTagPrefix } from "./prefs.js";
+import {
+  getNavigateOnClick,
+  getSelectionColor,
+  getTagPrefix,
+  getUseCustomSelectionColor,
+} from "./prefs.js";
 
 const SECTION_ID = "annotation-compositor-groups";
 const STYLESHEET_URL = "chrome://annotationcompositor/content/annotation-compositor.css";
@@ -239,6 +245,11 @@ export class GroupsPanel {
     const doc = body.ownerDocument;
     const state = this.state(item.key);
     const prefix = getTagPrefix();
+    if (getUseCustomSelectionColor()) {
+      body.style.setProperty("--ac-selection-color", getSelectionColor());
+    } else {
+      body.style.removeProperty("--ac-selection-color");
+    }
     const records = this.host.service.load(item).records;
     const model = buildViewModel(records, prefix, this.uiState(state));
     state.visibleOrder = this.renderOrder(model.folders, model.ungrouped);
@@ -338,18 +349,24 @@ export class GroupsPanel {
     row.className = "ac-folder-row";
     row.setAttribute("draggable", "true");
 
+    // A folder can be collapsed whenever it hides something — its own
+    // annotations count no less than a subfolder's — so leaf folders (direct
+    // annotations, no child folders) get a working twisty too.
+    const canToggle = folder.hasChildren || folder.directCount > 0;
     const twisty = doc.createElement("span");
     twisty.className = "ac-twisty";
-    twisty.textContent = folder.hasChildren ? (folder.collapsed ? "›" : "⌄") : "";
-    twisty.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (state.collapsedKeys.has(folder.key)) {
-        state.collapsedKeys.delete(folder.key);
-      } else {
-        state.collapsedKeys.add(folder.key);
-      }
-      this.refresh();
-    });
+    twisty.textContent = canToggle ? (folder.collapsed ? "›" : "⌄") : "";
+    if (canToggle) {
+      twisty.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (state.collapsedKeys.has(folder.key)) {
+          state.collapsedKeys.delete(folder.key);
+        } else {
+          state.collapsedKeys.add(folder.key);
+        }
+        this.refresh();
+      });
+    }
 
     const name = doc.createElement("span");
     name.className = "ac-folder-name";
@@ -383,7 +400,7 @@ export class GroupsPanel {
     }
     row.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      void this.folderMenu(item, state, folder);
+      this.folderMenu(doc, event, item, state, folder);
     });
     row.addEventListener("dragstart", (event) => {
       this.startDrag(event, { ids: [], sourceKey: null, folderKey: folder.key });
@@ -498,12 +515,12 @@ export class GroupsPanel {
       }
     });
     row.addEventListener("dblclick", () => {
-      // Always navigates, even when the click-to-navigate pref is off.
-      void this.navigateAlways(item, annotation.id);
+      ztoolkit.copyText(this.clipboardText(annotation));
+      ztoolkit.notify("Annotation Compositor", "Copied to clipboard.");
     });
     row.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      void this.annotationMenu(item, state, annotation);
+      this.annotationMenu(doc, event, item, state, annotation);
     });
     row.addEventListener("dragstart", (event) => {
       const ids = state.selection.has(annotation.id)
@@ -521,11 +538,13 @@ export class GroupsPanel {
   // -------------------------------------------------------------- interaction
 
   /** Right-click on an annotation: add it (and the rest of the selection) to an existing folder. */
-  private async annotationMenu(
+  private annotationMenu(
+    doc: Document,
+    event: MouseEvent,
     item: Zotero.Item,
     state: PanelState,
     annotation: AnnotationRecord,
-  ): Promise<void> {
+  ): void {
     const ids = state.selection.has(annotation.id)
       ? [...state.selection].filter((id) => !id.startsWith("folder:"))
       : [annotation.id];
@@ -535,18 +554,33 @@ export class GroupsPanel {
       this.error("No folders exist yet for this item.");
       return;
     }
-    const labels = paths.map((path) => path.join(FLAT_SEPARATOR));
-    const index = select("Add to folder", "Choose a folder:", labels);
-    if (index === null || paths[index] === undefined) {
-      return;
-    }
-    const target = paths[index];
+    openPopupMenu(
+      doc,
+      event,
+      paths.map((path) => ({
+        label: path.join(FLAT_SEPARATOR),
+        onCommand: () => void this.assignToFolder(item, state, ids, path),
+      })),
+    );
+  }
+
+  private async assignToFolder(
+    item: Zotero.Item,
+    state: PanelState,
+    ids: readonly string[],
+    target: FolderPath,
+  ): Promise<void> {
     const outcome = await this.host.service.mutate(item, "pre-assign", (recs, prefix) =>
       assignAnnotations(recs, prefix, ids, target, { mode: "add" }),
     );
     this.noteRecent(state, pathKey(target));
     this.report(outcome);
     this.refresh();
+  }
+
+  /** Plain-text clipboard payload for one annotation: its text, its comment, or both. */
+  private clipboardText(annotation: AnnotationRecord): string {
+    return [annotation.text, annotation.comment].filter((part) => part.length > 0).join("\n\n");
   }
 
   private async navigateAlways(item: Zotero.Item, annotationKey: string): Promise<void> {
@@ -634,38 +668,23 @@ export class GroupsPanel {
     this.refresh();
   }
 
-  private async folderMenu(
+  private folderMenu(
+    doc: Document,
+    event: MouseEvent,
     item: Zotero.Item,
     state: PanelState,
     folder: FolderNode,
-  ): Promise<void> {
-    const selected = select("Folder", folder.key, [
-      "Rename…",
-      "New subfolder…",
-      "Delete folder",
-      "Pin as sticky group",
-      "Clear sticky group",
+  ): void {
+    openPopupMenu(doc, event, [
+      { label: "Rename…", onCommand: () => void this.renameFolder(item, folder.path) },
+      {
+        label: "New subfolder…",
+        onCommand: () => void this.createFolder(item, state, folder.path),
+      },
+      { label: "Delete folder", onCommand: () => void this.deleteFolder(item, folder.path) },
+      { label: "Pin as sticky group", onCommand: () => this.setSticky(folder.path) },
+      { label: "Clear sticky group", onCommand: () => this.setSticky(null) },
     ]);
-    if (selected === null) {
-      return;
-    }
-    switch (selected) {
-      case 0:
-        await this.renameFolder(item, folder.path);
-        break;
-      case 1:
-        await this.createFolder(item, state, folder.path);
-        break;
-      case 2:
-        await this.deleteFolder(item, folder.path);
-        break;
-      case 3:
-        this.setSticky(folder.path);
-        break;
-      default:
-        this.setSticky(null);
-        break;
-    }
   }
 
   private setSticky(path: FolderPath | null): void {
