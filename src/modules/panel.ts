@@ -26,9 +26,11 @@ import {
   reparentFolder,
   unassignAnnotations,
 } from "../core/rewrite.js";
-import { ANNOTATION_TYPES } from "../core/types.js";
+import { ANNOTATION_TYPES, TAG_TYPE_AUTOMATIC } from "../core/types.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
+import { resolveColorLabel } from "../core/colorNames.js";
 import { confirm, promptText, promptTextChecked } from "../adapters/dialogs.js";
+import { getCustomColorLabels } from "../adapters/colorLabels.js";
 import { openPopupMenu } from "../adapters/popupMenu.js";
 import { openAndNavigate } from "../adapters/reader.js";
 import type { StickyGroupRegistry } from "../adapters/reader.js";
@@ -41,7 +43,7 @@ import {
   getUseCustomSelectionColor,
 } from "./prefs.js";
 
-const SECTION_ID = "annotation-compositor-groups";
+export const SECTION_ID = "annotation-compositor-groups";
 const STYLESHEET_URL = "chrome://annotationcompositor/content/annotation-compositor.css";
 const DRAG_MIME = "application/x-annotation-compositor";
 
@@ -455,6 +457,9 @@ export class GroupsPanel {
       button("⟲", "Restore previous grouping", () => {
         void this.host.restoreItem(item);
       }),
+      button("⇌", "Convert this item's group tags to Automatic", () => {
+        void this.convertToAutomatic(item);
+      }),
     );
 
     const filter = doc.createElement("input");
@@ -723,8 +728,10 @@ export class GroupsPanel {
     });
     row.addEventListener("dblclick", () => {
       this.cancelNavigate();
-      ztoolkit.copyText(this.clipboardText(annotation));
-      ztoolkit.notify("Annotation Compositor", "Copied to clipboard.");
+      void (async () => {
+        ztoolkit.copyText(await this.clipboardText(annotation));
+        ztoolkit.notify("Annotation Compositor", "Copied to clipboard.");
+      })();
     });
     row.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -805,11 +812,28 @@ export class GroupsPanel {
     this.refresh();
   }
 
-  /** Plain-text clipboard payload for one annotation: its text, its comment, or both. */
-  private clipboardText(annotation: AnnotationRecord): string {
-    return [annotation.text, annotation.comment]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
+  /**
+   * Plain-text clipboard payload for one annotation:
+   * `{annotated text} ({Color}: {page})`, followed by the comment (if any)
+   * on its own paragraph. `{Color}` is the Enhanced Notes custom label for
+   * the annotation's color when one is set, else Zotero's built-in name.
+   */
+  private async clipboardText(annotation: AnnotationRecord): Promise<string> {
+    const primary =
+      annotation.text.length > 0
+        ? annotation.text
+        : annotation.comment.length > 0
+          ? annotation.comment
+          : `(${annotation.type})`;
+    const colorLabel = resolveColorLabel(annotation.color, await getCustomColorLabels());
+    const suffix =
+      annotation.pageLabel.length > 0
+        ? `${colorLabel}: ${annotation.pageLabel}`
+        : colorLabel;
+    const line = `${primary} (${suffix})`;
+    return annotation.text.length > 0 && annotation.comment.length > 0
+      ? `${line}\n\n${annotation.comment}`
+      : line;
   }
 
   private async navigateAlways(item: Zotero.Item, annotationKey: string): Promise<void> {
@@ -1125,6 +1149,25 @@ export class GroupsPanel {
     const outcome = await this.host.service.mutate(item, "pre-delete", (records, p) =>
       deleteFolder(records, p, path),
     );
+    this.report(outcome);
+    this.refresh();
+  }
+
+  /**
+   * Rewrite every existing group tag on `item` from Manual to Automatic.
+   * Snapshot-backed like every other write, so "Restore previous grouping"
+   * can undo it.
+   */
+  private async convertToAutomatic(item: Zotero.Item): Promise<void> {
+    if (
+      !confirm(
+        "Convert to Automatic",
+        'Convert this item\'s existing group tags from Manual to Automatic? A snapshot is taken first, and "Restore previous grouping" can undo it.',
+      )
+    ) {
+      return;
+    }
+    const outcome = await this.host.service.rewriteTagType(item, TAG_TYPE_AUTOMATIC);
     this.report(outcome);
     this.refresh();
   }

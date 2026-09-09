@@ -11,11 +11,12 @@ import { getAnnotationItems } from "./adapters/annotations.js";
 import Addon from "./addon.js";
 import { assignNewAnnotations } from "./modules/autoAssign.js";
 import { NotifierService } from "./modules/notifier.js";
-import { GroupsPanel } from "./modules/panel.js";
+import { GroupsPanel, SECTION_ID } from "./modules/panel.js";
 import {
   PREF_KEYS,
   SYNCED_PREF_KEYS,
   getPersistedStickyGroups,
+  getPinGroupsPanel,
   getWarningAcknowledged,
   setPersistedStickyGroups,
   setWarningAcknowledged,
@@ -142,6 +143,13 @@ export async function onStartup(rootURI: string): Promise<void> {
   addon.readerMenu.register();
   addon.readerSelection.register();
   addon.data.initialized = true;
+
+  // Zotero's own "pin a section" feature, applied to our Groups panel so it
+  // is the default item-pane view instead of Info. A single global pref, so
+  // this is opt-out (see the "pinGroupsPanel" preference).
+  if (getPinGroupsPanel()) {
+    Zotero.Prefs.set("pinnedPane", SECTION_ID);
+  }
 
   // Unregistered automatically by Zotero when the plugin shuts down.
   void Zotero.PreferencePanes.register({

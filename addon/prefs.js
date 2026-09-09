@@ -1,6 +1,6 @@
 // Defaults must match src/modules/prefs.ts.
 pref("__prefsPrefix__.tagPrefix", "grp");
-pref("__prefsPrefix__.tagType", 0);
+pref("__prefsPrefix__.tagType", 1);
 pref("__prefsPrefix__.navigateOnClick", true);
 pref("__prefsPrefix__.persistStickyGroup", false);
 pref("__prefsPrefix__.stickyGroups", "{}");
@@ -14,3 +14,4 @@ pref("__prefsPrefix__.useCustomSelectionColor", false);
 pref("__prefsPrefix__.selectionColor", "#2ea8e5");
 pref("__prefsPrefix__.stickyOnCreate", false);
 pref("__prefsPrefix__.syncSettings", true);
+pref("__prefsPrefix__.pinGroupsPanel", true);

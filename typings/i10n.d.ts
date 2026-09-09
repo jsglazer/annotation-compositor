@@ -11,6 +11,8 @@ export type FluentMessageId =
   | 'pref-include-ungrouped'
   | 'pref-navigate-on-click'
   | 'pref-persist-sticky-group'
+  | 'pref-pin-groups-panel'
+  | 'pref-pin-groups-panel-description'
   | 'pref-selection-color-label'
   | 'pref-sticky-on-create'
   | 'pref-sync-settings'

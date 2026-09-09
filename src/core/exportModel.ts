@@ -7,6 +7,7 @@
  * `annotationSortIndex`.
  */
 import { comparePaths, groupPaths, isBelow, pathKey } from "./path.js";
+import { resolveColorLabel } from "./colorNames.js";
 import { sortAnnotations } from "./sort.js";
 import { collectExistingPaths } from "./tree.js";
 import type { AnnotationRecord, FolderPath } from "./types.js";
@@ -16,6 +17,8 @@ export interface ExportAnnotation {
   readonly index: number;
   readonly type: string;
   readonly color: string;
+  /** Display label for `color` — a custom label when one is set, else the built-in name. */
+  readonly colorLabel: string;
   readonly text: string;
   readonly comment: string;
   readonly pageLabel: string;
@@ -57,17 +60,21 @@ export interface ExportOptions {
   readonly includeUngrouped?: boolean;
   /** Parent item title, passed through to the template. */
   readonly title?: string;
+  /** Custom color labels (e.g. from Enhanced Notes), keyed by canonical color name. */
+  readonly colorLabels?: Readonly<Record<string, string>>;
 }
 
 function toExportAnnotation(
   annotation: AnnotationRecord,
   index: number,
+  colorLabels: Readonly<Record<string, string>>,
 ): ExportAnnotation {
   return {
     id: annotation.id,
     index,
     type: annotation.type,
     color: annotation.color,
+    colorLabel: resolveColorLabel(annotation.color, colorLabels),
     text: annotation.text,
     comment: annotation.comment,
     pageLabel: annotation.pageLabel,
@@ -111,6 +118,7 @@ export function buildExportContext(
   }
 
   const includeSubfolders = options.includeSubfolders ?? true;
+  const colorLabels = options.colorLabels ?? {};
   const knownPaths = collectExistingPaths(annotations, tagPrefix);
 
   // Deduplicate the selection, and when subfolders are included drop any
@@ -157,7 +165,7 @@ export function buildExportContext(
       count: own.length,
       totalCount,
       annotations: own.map((annotation, index) =>
-        toExportAnnotation(annotation, index + 1),
+        toExportAnnotation(annotation, index + 1, colorLabels),
       ),
       folders: children,
       hasAnnotations: own.length > 0,
@@ -169,7 +177,7 @@ export function buildExportContext(
   const ungrouped =
     (options.includeUngrouped ?? false)
       ? sortAnnotations(ungroupedRecords).map((annotation, index) =>
-          toExportAnnotation(annotation, index + 1),
+          toExportAnnotation(annotation, index + 1, colorLabels),
         )
       : [];
 

@@ -14,14 +14,14 @@ export interface TemplatePreset {
   readonly partials: Readonly<Record<string, string>>;
 }
 
-const MARKDOWN_FOLDER = `{{#hasAnnotations}}{{#annotations}}- {{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} (p. {{pageLabel}}){{/pageLabel}}
+const MARKDOWN_FOLDER = `{{#hasAnnotations}}{{#annotations}}- {{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}} ({{colorLabel}}{{#pageLabel}}: {{pageLabel}}{{/pageLabel}})
 {{#hasComment}}  - {{comment}}
 {{/hasComment}}{{/annotations}}
 {{/hasAnnotations}}{{#folders}}{{#depth}}{{/depth}}### {{path}}
 {{>folder}}{{/folders}}`;
 
 const HTML_FOLDER = `{{#hasAnnotations}}<ul>
-{{#annotations}}<li><span class="ac-swatch" data-color="{{color}}"></span>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} <em>p. {{pageLabel}}</em>{{/pageLabel}}{{#hasComment}}<div class="ac-comment">{{comment}}</div>{{/hasComment}}</li>
+{{#annotations}}<li><span class="ac-swatch" data-color="{{color}}"></span>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}} <em>{{colorLabel}}{{#pageLabel}}: {{pageLabel}}{{/pageLabel}}</em>{{#hasComment}}<div class="ac-comment">{{comment}}</div>{{/hasComment}}</li>
 {{/annotations}}</ul>
 {{/hasAnnotations}}{{#folders}}<section><h3>{{path}}</h3>
 {{>folder}}</section>
@@ -39,7 +39,7 @@ export const MARKDOWN_PRESET: TemplatePreset = {
 {{>folder}}
 {{/folders}}{{#hasUngrouped}}## Ungrouped
 
-{{#ungrouped}}- {{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} (p. {{pageLabel}}){{/pageLabel}}
+{{#ungrouped}}- {{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}} ({{colorLabel}}{{#pageLabel}}: {{pageLabel}}{{/pageLabel}})
 {{#hasComment}}  - {{comment}}
 {{/hasComment}}{{/ungrouped}}{{/hasUngrouped}}`,
   partials: { folder: MARKDOWN_FOLDER },
@@ -54,7 +54,7 @@ export const HTML_PRESET: TemplatePreset = {
 {{#folders}}<section><h2>{{path}}</h2>
 {{>folder}}</section>
 {{/folders}}{{#hasUngrouped}}<section><h2>Ungrouped</h2><ul>
-{{#ungrouped}}<li>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} <em>p. {{pageLabel}}</em>{{/pageLabel}}{{#hasComment}}<div class="ac-comment">{{comment}}</div>{{/hasComment}}</li>
+{{#ungrouped}}<li>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}} <em>{{colorLabel}}{{#pageLabel}}: {{pageLabel}}{{/pageLabel}}</em>{{#hasComment}}<div class="ac-comment">{{comment}}</div>{{/hasComment}}</li>
 {{/ungrouped}}</ul></section>
 {{/hasUngrouped}}`,
   partials: { folder: HTML_FOLDER },

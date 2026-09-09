@@ -12,6 +12,7 @@ import type { TemplatePreset } from "../core/defaultTemplates.js";
 import type { FolderPath } from "../core/types.js";
 import { confirm, select } from "../adapters/dialogs.js";
 import { getCitationKey } from "../adapters/citation.js";
+import { getCustomColorLabels } from "../adapters/colorLabels.js";
 import type { GroupService } from "./groupService.js";
 import {
   getIncludeSubfolders,
@@ -39,18 +40,20 @@ export class ExportService {
   constructor(private readonly service: GroupService) {}
 
   /** Render `selectedPaths` and return the text, without any UI. */
-  render(
+  async render(
     item: Zotero.Item,
     selectedPaths: readonly FolderPath[],
     preset: TemplatePreset,
     includeSubfolders: boolean,
     includeUngrouped = false,
-  ): string {
+  ): Promise<string> {
+    const colorLabels = await getCustomColorLabels();
     const context = buildExportContext(this.service.load(item).records, getTagPrefix(), {
       selectedPaths,
       includeSubfolders,
       includeUngrouped,
       title: exportTitle(item),
+      colorLabels,
     });
     return renderTemplate(preset.template, context, { partials: preset.partials });
   }
@@ -87,7 +90,7 @@ export class ExportService {
 
     let output: string;
     try {
-      output = this.render(
+      output = await this.render(
         item,
         selectedPaths,
         preset,
@@ -103,14 +106,15 @@ export class ExportService {
       return;
     }
 
+    // "File…" listed first so it is the dialog's pre-selected default.
     const destination = select("Export annotations", "Send the result to:", [
-      "Clipboard",
       "File…",
+      "Clipboard",
     ]);
     if (destination === null) {
       return;
     }
-    if (destination === 0) {
+    if (destination === 1) {
       if (preset.id === "html") {
         ztoolkit.copyHTML(output, output);
       } else {

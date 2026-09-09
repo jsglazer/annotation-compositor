@@ -24,6 +24,7 @@ export const PREF_KEYS = {
   selectionColor: `${BRANCH}.selectionColor`,
   stickyOnCreate: `${BRANCH}.stickyOnCreate`,
   syncSettings: `${BRANCH}.syncSettings`,
+  pinGroupsPanel: `${BRANCH}.pinGroupsPanel`,
 } as const;
 
 /**
@@ -45,6 +46,7 @@ export const SYNCED_PREF_KEYS = [
   PREF_KEYS.useCustomSelectionColor,
   PREF_KEYS.selectionColor,
   PREF_KEYS.stickyOnCreate,
+  PREF_KEYS.pinGroupsPanel,
 ] as const;
 
 export const DEFAULT_TAG_PREFIX = "grp";
@@ -82,7 +84,7 @@ export function setTagPrefix(prefix: string): void {
   Zotero.Prefs.set(PREF_KEYS.tagPrefix, prefix, true);
 }
 
-/** Group tags are MANUAL (type 0) by default; the pref can switch the library. */
+/** Group tags are AUTOMATIC (type 1) by default; the pref can switch the library. */
 export function getTagType(): TagType {
   const value = Zotero.Prefs.get(PREF_KEYS.tagType, true);
   return value === 1 || value === "1" ? TAG_TYPE_AUTOMATIC : TAG_TYPE_MANUAL;
@@ -186,6 +188,19 @@ export function getStickyOnCreate(): boolean {
 
 export function setStickyOnCreate(value: boolean): void {
   Zotero.Prefs.set(PREF_KEYS.stickyOnCreate, value, true);
+}
+
+/**
+ * Whether this plugin pins its Groups panel as Zotero's default item-pane
+ * view (via Zotero's own global `pinnedPane` pref) on every startup,
+ * overriding whatever the user pinned themselves in the meantime.
+ */
+export function getPinGroupsPanel(): boolean {
+  return readBool(PREF_KEYS.pinGroupsPanel, true);
+}
+
+export function setPinGroupsPanel(value: boolean): void {
+  Zotero.Prefs.set(PREF_KEYS.pinGroupsPanel, value, true);
 }
 
 /** Whether settings are mirrored into Zotero's synced settings. */

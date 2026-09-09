@@ -22,6 +22,7 @@ declare namespace _ZoteroTypes {
       "selectionColor": string;
       "stickyOnCreate": boolean;
       "syncSettings": boolean;
+      "pinGroupsPanel": boolean;
     };
   }
 }
