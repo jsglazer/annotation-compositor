@@ -6,6 +6,12 @@
  * call here is guarded and falls back to an empty map (never throws) when
  * it isn't installed, hasn't registered the endpoint, or the request fails
  * for any reason.
+ *
+ * Uses the platform `fetch()` rather than `Zotero.HTTP.request` — the latter
+ * refuses to even attempt a request while `Zotero.HTTP.browserIsOffline()` is
+ * true (Firefox's "work offline" / no-network-detected state), which is
+ * meant to short-circuit calls to real remote hosts but wrongly blocks a
+ * same-machine loopback call too.
  */
 const ENDPOINT = "http://127.0.0.1:23119/enhanced-notes/color-labels";
 const CACHE_TTL_MS = 15_000;
@@ -14,12 +20,15 @@ const REQUEST_TIMEOUT_MS = 1_500;
 let cache: { labels: Record<string, string>; fetchedAt: number } | null = null;
 
 async function fetchLabels(): Promise<Record<string, string>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await Zotero.HTTP.request("GET", ENDPOINT, {
-      timeout: REQUEST_TIMEOUT_MS,
-      successCodes: [200],
-    });
-    const parsed = JSON.parse(response.responseText) as { colorLabels?: unknown };
+    const response = await fetch(ENDPOINT, { signal: controller.signal });
+    if (!response.ok) {
+      ztoolkit.log("annotation-compositor: color-labels request failed", response.status);
+      return {};
+    }
+    const parsed = (await response.json()) as { colorLabels?: unknown };
     const raw = parsed.colorLabels;
     if (raw === null || typeof raw !== "object") {
       return {};
@@ -31,8 +40,14 @@ async function fetchLabels(): Promise<Record<string, string>> {
       }
     }
     return labels;
-  } catch {
+  } catch (error) {
+    // Enhanced Notes isn't installed, hasn't started its server endpoint
+    // yet, or the request otherwise failed — never block a copy/export on
+    // this, but leave a trace for debug output.
+    ztoolkit.log("annotation-compositor: color-labels fetch error", error);
     return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
 
