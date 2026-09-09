@@ -16,17 +16,19 @@ Group tags are **manual (type 0)** tags by default, so Zotero's _Delete Automati
 
 ## Features
 
-- **Groups panel** in the item pane — nested folder tree with member counts and colour swatches, a permanent derived _Ungrouped_ bucket, filter box, and expand/collapse all
+- **Groups panel** in the item pane — nested folder tree with member counts and colour swatches, a collapsible derived _Ungrouped_ bucket, filter box, and expand/collapse all
+- **Annotation-type filter** — show only highlights, only underlines, only notes, and so on; every row also carries a one-glyph type mark, so a highlight and an underline are never two identical lines of text
 - **Multi-folder membership** — an annotation belongs to every folder you put it in
-- **Drag and drop** — dragging an annotation onto a folder **moves** it (adds the destination, removes the source, in one transaction); **⌘-drag** (Alt elsewhere) **adds** without removing. Dragging a folder reparents that folder and its whole subtree
+- **Drag and drop** — dragging an annotation onto a folder **moves** it (adds the destination, removes the source, in one transaction); **⌘-drag** (Alt elsewhere) **adds** without removing. Dragging a folder onto another nests it — that folder and its whole subtree — and dropping it on the empty space below the tree returns it to the top level. The folder context menu carries the same moves for anyone who would rather not drag
 - **Folder operations** — create, rename, delete and reparent, executed as transactional tag-path rewrites across every affected annotation, each preceded by a snapshot
 - **Multi-select** — shift-click selects a contiguous range of annotations; ctrl/cmd-click toggles one, for drag, folder-menu, and drop-target operations that act on the whole selection
 - **Click to navigate** — clicking an annotation row opens the reader (if it isn't already open, or brings its tab to the front if it is) and scrolls to it (toggleable); double-click copies the annotation's text and comment to the clipboard
 - **Selection sync** — clicking a highlight in the reader text or in Zotero's own native annotations sidebar selects and scrolls to the matching row in the Groups panel, in both directions
 - **Reader context menu** — "Add to group ▸" on right-click, nested when the reader supports submenus and flat `A > B > C` labels when it does not. Above 25 folders the menu collapses to a recents list plus a modal picker
-- **Panel context menu** — right-click an annotation for "Add to folder", or a folder for Rename/New subfolder/Delete/Pin sticky group/Clear sticky group, in a popup menu at the cursor
+- **Panel context menu** — right-click an annotation to file it in an existing folder or a brand-new one, or a folder for Rename / New subfolder / Move / Delete / Pin as sticky group, in a popup menu at the cursor. Folders you have just created and not yet filled appear in these menus too, even though an empty folder has no tag to be found by
 - **Colour rules** — map an annotation colour to one or more folders, library-wide with optional per-item overrides. Rules fire at creation time only and are purely additive
-- **Sticky group** — pin a folder to a reader tab so new annotations join it automatically; optionally persisted across sessions
+- **Sticky group** — pin a folder to a reader tab so new annotations join it automatically; the pinned folder is marked 📌 in the tree, the new-folder dialog can pin as it creates, and the pin is optionally persisted across sessions
+- **Settings sync** — preferences ride along with your Zotero account through Zotero's own synced-settings channel, so a second machine picks up your prefix, templates and colours. Per-tab pinned folders stay local, since a reader tab means nothing on another machine
 - **Templated export** — Mustache-subset templates (`{{var}}`, `{{#section}}`, `{{^inverted}}`, self-referencing partials for subfolder traversal) with Markdown and HTML defaults, include-subfolders and include-ungrouped toggles, ordering by `annotationSortIndex`, to clipboard or file. The document title uses the item's Better BibTeX citation key when one is available, falling back to its display title
 - **Snapshots** — a rolling JSON snapshot is written before every group-tag write, to `<Zotero data directory>/annotation-compositor/snapshots/`. **Restore previous grouping** shows a diff preview before it writes, and is the undo path
 
@@ -50,8 +52,12 @@ The path separator `/` is reserved, so a folder name may not contain it. Names a
 | `tagType`                                               | `0` (manual)                 | Manual or automatic tags for group membership                                         |
 | `navigateOnClick`                                       | `true`                       | Clicking an annotation row scrolls the reader to it                                   |
 | `persistStickyGroup`                                    | `false`                      | Remember sticky groups across sessions                                                |
+| `stickyOnCreate`                                        | `false`                      | Pre-tick "pin as sticky folder" in the new-folder dialog                              |
+| `syncSettings`                                          | `true`                       | Mirror these settings through Zotero sync so they follow your account                 |
 | `useCustomSelectionColor` / `selectionColor`            | `false` / `#2ea8e5`          | Override the selected-row background with a custom highlight color                    |
 | `templateId` / `includeSubfolders` / `includeUngrouped` | `markdown` / `true` / `true` | Export defaults                                                                       |
+
+The preferences pane shows the installed version at the top.
 
 ## Development
 
