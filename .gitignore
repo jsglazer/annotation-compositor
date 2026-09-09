@@ -6,3 +6,5 @@ build/
 NewBuild/
 CLAUDE.md
 GEMINI.md
+EXPORT/
+*.xpi
