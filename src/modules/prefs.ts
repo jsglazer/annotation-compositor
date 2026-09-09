@@ -22,7 +22,30 @@ export const PREF_KEYS = {
   warningAcknowledged: `${BRANCH}.warningAcknowledged`,
   useCustomSelectionColor: `${BRANCH}.useCustomSelectionColor`,
   selectionColor: `${BRANCH}.selectionColor`,
+  stickyOnCreate: `${BRANCH}.stickyOnCreate`,
+  syncSettings: `${BRANCH}.syncSettings`,
 } as const;
+
+/**
+ * The prefs that travel between machines via Zotero's synced settings.
+ *
+ * Deliberately excluded: `stickyGroups` (keyed by reader tab id, meaningless on
+ * another machine) and `warningAcknowledged` (a per-install first-run notice).
+ */
+export const SYNCED_PREF_KEYS = [
+  PREF_KEYS.tagPrefix,
+  PREF_KEYS.tagType,
+  PREF_KEYS.navigateOnClick,
+  PREF_KEYS.persistStickyGroup,
+  PREF_KEYS.libraryColorRules,
+  PREF_KEYS.itemColorRules,
+  PREF_KEYS.templateId,
+  PREF_KEYS.includeSubfolders,
+  PREF_KEYS.includeUngrouped,
+  PREF_KEYS.useCustomSelectionColor,
+  PREF_KEYS.selectionColor,
+  PREF_KEYS.stickyOnCreate,
+] as const;
 
 export const DEFAULT_TAG_PREFIX = "grp";
 export const DEFAULT_SELECTION_COLOR = "#2ea8e5";
@@ -154,6 +177,61 @@ export function getSelectionColor(): string {
 
 export function setSelectionColor(color: string): void {
   Zotero.Prefs.set(PREF_KEYS.selectionColor, color, true);
+}
+
+/** Whether the "new folder" dialog pre-ticks "pin as this tab's sticky folder". */
+export function getStickyOnCreate(): boolean {
+  return readBool(PREF_KEYS.stickyOnCreate, false);
+}
+
+export function setStickyOnCreate(value: boolean): void {
+  Zotero.Prefs.set(PREF_KEYS.stickyOnCreate, value, true);
+}
+
+/** Whether settings are mirrored into Zotero's synced settings. */
+export function getSyncSettings(): boolean {
+  return readBool(PREF_KEYS.syncSettings, true);
+}
+
+export function setSyncSettings(value: boolean): void {
+  Zotero.Prefs.set(PREF_KEYS.syncSettings, value, true);
+}
+
+/** Every syncable pref and its current value, for the settings-sync payload. */
+export function collectSyncedPrefs(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of SYNCED_PREF_KEYS) {
+    const value = Zotero.Prefs.get(key, true);
+    if (value !== undefined) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/** Write a settings-sync payload back into the local pref branch. */
+export function applySyncedPrefs(values: Readonly<Record<string, unknown>>): number {
+  let applied = 0;
+  const allowed = new Set<string>(SYNCED_PREF_KEYS);
+  for (const [key, value] of Object.entries(values)) {
+    // Only keys this version knows about, and only primitives — a hostile or
+    // stale payload must never be able to set an arbitrary Zotero pref.
+    if (!allowed.has(key)) {
+      continue;
+    }
+    if (
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "boolean"
+    ) {
+      continue;
+    }
+    if (Zotero.Prefs.get(key, true) !== value) {
+      Zotero.Prefs.set(key, value as string | number | boolean, true);
+      applied += 1;
+    }
+  }
+  return applied;
 }
 
 /** First-run warning about "Delete Automatic Tags in This Library". */

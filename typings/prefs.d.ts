@@ -20,6 +20,8 @@ declare namespace _ZoteroTypes {
       "warningAcknowledged": boolean;
       "useCustomSelectionColor": boolean;
       "selectionColor": string;
+      "stickyOnCreate": boolean;
+      "syncSettings": boolean;
     };
   }
 }

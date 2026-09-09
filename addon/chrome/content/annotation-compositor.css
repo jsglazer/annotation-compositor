@@ -21,6 +21,9 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Keeps a drop zone for "move this folder to the top level" even when the
+     tree is short. */
+  min-height: 32px;
 }
 
 .ac-children {
@@ -42,10 +45,19 @@
   background-color: var(--fill-quinary);
 }
 
-.ac-selected {
+/* Selection must outrank :hover — a bare `.ac-selected` loses the specificity
+   contest with `.ac-annotation:hover`, so a clicked row only revealed its
+   selection colour once the pointer moved off it. */
+.ac-folder-row.ac-selected,
+.ac-annotation.ac-selected,
+.ac-folder-row.ac-selected:hover,
+.ac-annotation.ac-selected:hover {
   /* --ac-selection-color is set inline only when the user opts into a custom
      highlight color; otherwise it is unset and the theme default applies. */
-  background-color: var(--ac-selection-color, var(--color-accent-alt, rgba(0, 0, 0, 0.08)));
+  background-color: var(
+    --ac-selection-color,
+    var(--color-accent-alt, rgba(0, 0, 0, 0.08))
+  );
 }
 
 .ac-droptarget {
@@ -77,6 +89,24 @@
   height: 8px;
   border-radius: 50%;
   display: inline-block;
+}
+
+/* One-glyph annotation type mark, so highlight and underline are not two
+   identical rows of text. */
+.ac-type {
+  width: 10px;
+  text-align: center;
+  opacity: 0.55;
+  flex: none;
+}
+
+.ac-sticky {
+  font-size: 0.8em;
+  flex: none;
+}
+
+.ac-typefilter {
+  max-width: 110px;
 }
 
 .ac-annotation-text {

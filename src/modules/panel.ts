@@ -6,9 +6,18 @@
  * Collapsed subtrees are absent from the view model, so they cost nothing.
  * All decision logic lives in `src/core/`; this file only turns plain objects
  * into elements and turns events back into core calls.
+ *
+ * Two invariants worth knowing before editing:
+ *
+ *  - Zotero renders this section into MORE THAN ONE body (the library item pane
+ *    and the reader's context pane each get their own). Every live body is
+ *    tracked with the item Zotero last handed it, so a refresh can never paint
+ *    one item's folders into a pane showing another item.
+ *  - A plain selection change must NOT re-render. Replacing the row mid-gesture
+ *    is what stopped `dblclick` from ever firing.
  */
 import { buildViewModel, collectExistingPaths, collectFolderKeys } from "../core/tree.js";
-import { keyToPath, pathKey, validateFolderName } from "../core/path.js";
+import { keyToPath, pathKey, remapKeys, validateFolderName } from "../core/path.js";
 import { FLAT_SEPARATOR } from "../core/menuModel.js";
 import {
   assignAnnotations,
@@ -17,8 +26,9 @@ import {
   reparentFolder,
   unassignAnnotations,
 } from "../core/rewrite.js";
+import { ANNOTATION_TYPES } from "../core/types.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
-import { confirm, promptText } from "../adapters/dialogs.js";
+import { confirm, promptText, promptTextChecked } from "../adapters/dialogs.js";
 import { openPopupMenu } from "../adapters/popupMenu.js";
 import { openAndNavigate } from "../adapters/reader.js";
 import type { StickyGroupRegistry } from "../adapters/reader.js";
@@ -26,6 +36,7 @@ import type { GroupService } from "./groupService.js";
 import {
   getNavigateOnClick,
   getSelectionColor,
+  getStickyOnCreate,
   getTagPrefix,
   getUseCustomSelectionColor,
 } from "./prefs.js";
@@ -34,10 +45,32 @@ const SECTION_ID = "annotation-compositor-groups";
 const STYLESHEET_URL = "chrome://annotationcompositor/content/annotation-compositor.css";
 const DRAG_MIME = "application/x-annotation-compositor";
 
+/**
+ * Collapse key for the derived Ungrouped bucket. A real folder key is path
+ * segments joined by "/", and segments are non-empty after trimming, so no
+ * folder can ever produce a key starting with the separator.
+ */
+const UNGROUPED_KEY = "/ungrouped";
+
+/** How long a single click waits to see whether it is really a double click. */
+const DOUBLE_CLICK_MS = 260;
+
+/** One-character type marks, so highlight and underline are told apart at a glance. */
+const TYPE_MARKS: Readonly<Record<string, string>> = {
+  highlight: "▮",
+  underline: "▁",
+  note: "✎",
+  image: "▣",
+  ink: "✐",
+  text: "T",
+};
+
 interface PanelState {
   collapsedKeys: Set<string>;
   pendingFolderKeys: Set<string>;
   filter: string;
+  /** Annotation types to show; empty means every type. */
+  types: Set<string>;
   selection: Set<string>;
   /** Folder keys used recently, most recent first (feeds the reader menu). */
   recents: string[];
@@ -53,6 +86,12 @@ interface DragPayload {
   readonly folderKey: string | null;
 }
 
+/** One place Zotero has rendered the section, plus the item it belongs to. */
+interface LiveBody {
+  readonly body: HTMLElement;
+  item: Zotero.Item;
+}
+
 export interface PanelHost {
   readonly service: GroupService;
   readonly sticky: StickyGroupRegistry;
@@ -65,13 +104,30 @@ export interface PanelHost {
 export class GroupsPanel {
   private sectionKey: string | false = false;
   private readonly stateByItem = new Map<string, PanelState>();
-  private lastBody: { body: HTMLElement; item: Zotero.Item } | null = null;
+  /** Every body Zotero has rendered into, newest last. Pruned on each refresh. */
+  private bodies: LiveBody[] = [];
+  /** Pending single-click navigation, cancelled when a double click arrives. */
+  private clickTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly host: PanelHost) {}
 
   /** Folder keys the user touched most recently, for the reader context menu. */
   recentsFor(item: Zotero.Item): string[] {
     return [...this.state(item.key).recents];
+  }
+
+  /**
+   * Every folder path that can be assigned to for `item`: the ones backed by a
+   * tag PLUS the empty folders the user just created, which have no tag yet and
+   * were therefore missing from every menu until something was moved into them.
+   */
+  pathsFor(item: Zotero.Item): FolderPath[] {
+    const records = this.host.service.load(item).records;
+    const keys = new Set(collectExistingPaths(records, getTagPrefix()).map(pathKey));
+    for (const key of this.state(item.key).pendingFolderKeys) {
+      keys.add(key);
+    }
+    return [...keys].sort().map(keyToPath);
   }
 
   register(): void {
@@ -90,7 +146,7 @@ export class GroupsPanel {
         icon: "chrome://annotationcompositor/content/icons/icon-20.svg",
       },
       onRender: ({ body, item }) => {
-        this.lastBody = { body, item };
+        this.trackBody(body, item);
         this.injectStylesheet(body.ownerDocument);
         this.render(body, item);
       },
@@ -105,53 +161,75 @@ export class GroupsPanel {
       Zotero.ItemPaneManager.unregisterSection(SECTION_ID);
       this.sectionKey = false;
     }
+    if (this.clickTimer !== null) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
     this.stateByItem.clear();
-    this.lastBody = null;
+    this.bodies = [];
   }
 
-  /** Re-render the panel currently on screen, if any (notifier-driven). */
+  /**
+   * Remember (or re-point) a rendered body. Zotero reuses the same element when
+   * the selected item changes, so the item is updated in place rather than
+   * appended — otherwise a later refresh would render the previous item's
+   * folders into a pane now showing a different one.
+   */
+  private trackBody(body: HTMLElement, item: Zotero.Item): void {
+    this.bodies = this.bodies.filter((entry) => entry.body.isConnected);
+    const existing = this.bodies.find((entry) => entry.body === body);
+    if (existing === undefined) {
+      this.bodies.push({ body, item });
+    } else {
+      existing.item = item;
+    }
+  }
+
+  /** Re-render every panel currently on screen (notifier-driven). */
   refresh(): void {
-    if (this.lastBody === null) {
-      return;
+    this.bodies = this.bodies.filter((entry) => entry.body.isConnected);
+    for (const entry of this.bodies) {
+      this.render(entry.body, entry.item);
     }
-    const { body, item } = this.lastBody;
-    if (body.isConnected) {
-      this.render(body, item);
-    }
+  }
+
+  /** The live bodies showing `item`, for in-place updates. */
+  private bodiesFor(item: Zotero.Item): HTMLElement[] {
+    return this.bodies
+      .filter((entry) => entry.body.isConnected && entry.item.key === item.key)
+      .map((entry) => entry.body);
   }
 
   /**
    * A reader reported that `annotationKey` (on `attachmentID`) became its
    * selection — from a click on the highlight in the text or in Zotero's own
-   * native sidebar. If that annotation belongs to the item currently shown,
-   * select and scroll to its row here too.
+   * native sidebar. If that annotation belongs to a displayed item, select and
+   * scroll to its row here too.
    */
   handleExternalSelection(attachmentID: number, annotationKey: string): void {
-    if (this.lastBody === null) {
-      return;
+    this.bodies = this.bodies.filter((entry) => entry.body.isConnected);
+    for (const { body, item } of [...this.bodies]) {
+      const set = this.host.service.load(item);
+      const belongs = set.attachments.some(
+        (attachment) => attachment.id === attachmentID,
+      );
+      if (!belongs || !set.itemsByKey.has(annotationKey)) {
+        continue;
+      }
+      const state = this.state(item.key);
+      if (state.selection.size === 1 && state.selection.has(annotationKey)) {
+        continue;
+      }
+      state.selection.clear();
+      state.selection.add(annotationKey);
+      state.lastClickedId = annotationKey;
+      this.applySelection(body, state);
+      body
+        .querySelector<HTMLElement>(
+          `.ac-annotation[data-id="${CSS.escape(annotationKey)}"]`,
+        )
+        ?.scrollIntoView({ block: "nearest" });
     }
-    const { body, item } = this.lastBody;
-    if (!body.isConnected) {
-      return;
-    }
-    const set = this.host.service.load(item);
-    const belongs = set.attachments.some((attachment) => attachment.id === attachmentID);
-    if (!belongs || !set.itemsByKey.has(annotationKey)) {
-      return;
-    }
-    const state = this.state(item.key);
-    if (state.selection.size === 1 && state.selection.has(annotationKey)) {
-      return;
-    }
-    state.selection.clear();
-    state.selection.add(annotationKey);
-    state.lastClickedId = annotationKey;
-    this.render(body, item);
-    body
-      .querySelector<HTMLElement>(
-        `.ac-annotation[data-id="${CSS.escape(annotationKey)}"]`,
-      )
-      ?.scrollIntoView({ block: "nearest" });
   }
 
   /** Add the panel stylesheet once per document, tracked for shutdown removal. */
@@ -173,6 +251,7 @@ export class GroupsPanel {
         collapsedKeys: new Set<string>(),
         pendingFolderKeys: new Set<string>(),
         filter: "",
+        types: new Set<string>(),
         selection: new Set<string>(),
         recents: [],
         visibleOrder: [],
@@ -188,7 +267,25 @@ export class GroupsPanel {
       collapsedKeys: [...state.collapsedKeys],
       pendingFolderKeys: [...state.pendingFolderKeys],
       filter: state.filter,
+      types: [...state.types],
     };
+  }
+
+  /**
+   * Move every UI-state key that names `source` (or something below it) onto
+   * `target`. Called after a rename or reparent so collapse state, pending
+   * empty folders and the recents list follow the folder instead of being
+   * orphaned — an orphaned collapse key is why a renamed folder sprang open and
+   * why its twisty then stopped responding.
+   */
+  private remapState(state: PanelState, source: FolderPath, target: FolderPath): void {
+    state.collapsedKeys = new Set(remapKeys(state.collapsedKeys, source, target));
+    state.pendingFolderKeys = new Set(remapKeys(state.pendingFolderKeys, source, target));
+    state.recents = remapKeys(state.recents, source, target);
+    const sourceKey = `folder:${pathKey(source)}`;
+    if (state.selection.delete(sourceKey)) {
+      state.selection.add(`folder:${pathKey(target)}`);
+    }
   }
 
   /**
@@ -200,6 +297,7 @@ export class GroupsPanel {
   private renderOrder(
     folders: readonly FolderNode[],
     ungrouped: readonly AnnotationRecord[],
+    ungroupedCollapsed: boolean,
   ): string[] {
     const order: string[] = [];
     const walk = (nodes: readonly FolderNode[]): void => {
@@ -211,7 +309,9 @@ export class GroupsPanel {
       }
     };
     walk(folders);
-    order.push(...ungrouped.map((annotation) => annotation.id));
+    if (!ungroupedCollapsed) {
+      order.push(...ungrouped.map((annotation) => annotation.id));
+    }
     return order;
   }
 
@@ -239,6 +339,14 @@ export class GroupsPanel {
     );
   }
 
+  private toggleCollapse(state: PanelState, key: string): void {
+    if (state.collapsedKeys.has(key)) {
+      state.collapsedKeys.delete(key);
+    } else {
+      state.collapsedKeys.add(key);
+    }
+  }
+
   // ---------------------------------------------------------------- rendering
 
   private render(body: HTMLElement, item: Zotero.Item): void {
@@ -252,7 +360,12 @@ export class GroupsPanel {
     }
     const records = this.host.service.load(item).records;
     const model = buildViewModel(records, prefix, this.uiState(state));
-    state.visibleOrder = this.renderOrder(model.folders, model.ungrouped);
+    const ungroupedCollapsed = state.collapsedKeys.has(UNGROUPED_KEY);
+    state.visibleOrder = this.renderOrder(
+      model.folders,
+      model.ungrouped,
+      ungroupedCollapsed,
+    );
 
     // Single DocumentFragment swap: the whole panel is built off-document and
     // installed in one operation, so the reader never sees a partial tree.
@@ -264,10 +377,40 @@ export class GroupsPanel {
     for (const folder of model.folders) {
       list.append(this.buildFolder(doc, item, state, folder, model.annotationsById));
     }
-    list.append(this.buildUngrouped(doc, item, state, model.ungrouped));
+    list.append(
+      this.buildUngrouped(doc, item, state, model.ungrouped, ungroupedCollapsed),
+    );
+    // Dropping on the empty space below the tree moves a folder to the top level.
+    this.makeDropTarget(list, item, state, []);
     fragment.append(list);
 
     body.replaceChildren(fragment);
+  }
+
+  /**
+   * Paint the current selection without rebuilding the tree. A full re-render
+   * on every click destroys the row the gesture started on, which suppressed
+   * `dblclick` entirely and cut drags short.
+   */
+  private applySelection(body: HTMLElement, state: PanelState): void {
+    const rows = (selector: string): HTMLElement[] =>
+      Array.from(body.querySelectorAll(selector)) as HTMLElement[];
+    for (const row of rows(".ac-annotation")) {
+      row.classList.toggle("ac-selected", state.selection.has(row.dataset.id ?? ""));
+    }
+    for (const row of rows(".ac-folder-row[data-key]")) {
+      row.classList.toggle(
+        "ac-selected",
+        state.selection.has(`folder:${row.dataset.key ?? ""}`),
+      );
+    }
+  }
+
+  /** Repaint selection in every pane showing this item. */
+  private refreshSelection(item: Zotero.Item, state: PanelState): void {
+    for (const body of this.bodiesFor(item)) {
+      this.applySelection(body, state);
+    }
   }
 
   private buildToolbar(
@@ -300,7 +443,10 @@ export class GroupsPanel {
         const model = buildViewModel(records, getTagPrefix(), {
           pendingFolderKeys: [...state.pendingFolderKeys],
         });
-        state.collapsedKeys = new Set(collectFolderKeys(model.folders));
+        state.collapsedKeys = new Set([
+          ...collectFolderKeys(model.folders),
+          UNGROUPED_KEY,
+        ]);
         this.refresh();
       }),
       button("⤓", "Export selected folders", () => {
@@ -320,8 +466,37 @@ export class GroupsPanel {
       state.filter = filter.value;
       this.refresh();
     });
-    bar.append(filter);
+    bar.append(filter, this.buildTypeFilter(doc, state));
     return bar;
+  }
+
+  /**
+   * Annotation-type filter. Highlights and underlines look alike once they are
+   * reduced to a row of text, so this is the way to look at one kind at a time;
+   * each row also carries a type mark for the same reason.
+   */
+  private buildTypeFilter(doc: Document, state: PanelState): HTMLElement {
+    const select = doc.createElement("select");
+    select.className = "ac-typefilter";
+    select.title = "Show only one annotation type";
+
+    const option = (value: string, label: string): HTMLOptionElement => {
+      const element = doc.createElement("option");
+      element.value = value;
+      element.textContent = label;
+      return element;
+    };
+    select.append(option("", "All types"));
+    for (const type of ANNOTATION_TYPES) {
+      const label = `${TYPE_MARKS[type] ?? ""} ${type[0].toUpperCase()}${type.slice(1)}`;
+      select.append(option(type, label.trim()));
+    }
+    select.value = state.types.size === 1 ? [...state.types][0] : "";
+    select.addEventListener("change", () => {
+      state.types = select.value.length === 0 ? new Set() : new Set([select.value]);
+      this.refresh();
+    });
+    return select;
   }
 
   private selectedFolderPaths(
@@ -347,34 +522,29 @@ export class GroupsPanel {
 
     const row = doc.createElement("div");
     row.className = "ac-folder-row";
+    row.dataset.key = folder.key;
     row.setAttribute("draggable", "true");
 
     // A folder can be collapsed whenever it hides something — its own
     // annotations count no less than a subfolder's — so leaf folders (direct
     // annotations, no child folders) get a working twisty too.
     const canToggle = folder.hasChildren || folder.directCount > 0;
-    const twisty = doc.createElement("span");
-    twisty.className = "ac-twisty";
-    twisty.textContent = canToggle ? (folder.collapsed ? "›" : "⌄") : "";
-    if (canToggle) {
-      twisty.addEventListener("click", (event) => {
-        event.stopPropagation();
-        if (state.collapsedKeys.has(folder.key)) {
-          state.collapsedKeys.delete(folder.key);
-        } else {
-          state.collapsedKeys.add(folder.key);
-        }
-        this.refresh();
-      });
-    }
+    row.append(this.buildTwisty(doc, state, folder.key, canToggle, folder.collapsed));
 
     const name = doc.createElement("span");
     name.className = "ac-folder-name";
     name.textContent = folder.name;
+    row.append(name);
 
-    const count = doc.createElement("span");
-    count.className = "ac-count";
-    count.textContent = String(folder.totalCount);
+    // The sticky folder is where new annotations in this reader tab land, so it
+    // is worth marking rather than leaving to memory.
+    if (pathKey(this.host.sticky.active() ?? []) === folder.key) {
+      const pin = doc.createElement("span");
+      pin.className = "ac-sticky";
+      pin.textContent = "📌";
+      pin.title = "New annotations in this tab are filed here";
+      row.append(pin);
+    }
 
     const swatches = doc.createElement("span");
     swatches.className = "ac-swatches";
@@ -385,7 +555,11 @@ export class GroupsPanel {
       swatches.append(dot);
     }
 
-    row.append(twisty, name, swatches, count);
+    const count = doc.createElement("span");
+    count.className = "ac-count";
+    count.textContent = String(folder.totalCount);
+
+    row.append(swatches, count);
     row.addEventListener("click", () => {
       const key = `folder:${folder.key}`;
       if (state.selection.has(key)) {
@@ -393,7 +567,7 @@ export class GroupsPanel {
       } else {
         state.selection.add(key);
       }
-      this.refresh();
+      this.refreshSelection(item, state);
     });
     if (state.selection.has(`folder:${folder.key}`)) {
       row.classList.add("ac-selected");
@@ -428,17 +602,41 @@ export class GroupsPanel {
     return container;
   }
 
+  private buildTwisty(
+    doc: Document,
+    state: PanelState,
+    key: string,
+    canToggle: boolean,
+    collapsed: boolean,
+  ): HTMLElement {
+    const twisty = doc.createElement("span");
+    twisty.className = "ac-twisty";
+    twisty.textContent = canToggle ? (collapsed ? "›" : "⌄") : "";
+    if (canToggle) {
+      twisty.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.toggleCollapse(state, key);
+        this.refresh();
+      });
+    }
+    return twisty;
+  }
+
   private buildUngrouped(
     doc: Document,
     item: Zotero.Item,
     state: PanelState,
     annotations: readonly AnnotationRecord[],
+    collapsed: boolean,
   ): HTMLElement {
     const container = doc.createElement("div");
     container.className = "ac-folder ac-ungrouped";
 
     const row = doc.createElement("div");
     row.className = "ac-folder-row";
+    row.append(
+      this.buildTwisty(doc, state, UNGROUPED_KEY, annotations.length > 0, collapsed),
+    );
     const name = doc.createElement("span");
     name.className = "ac-folder-name";
     // Derived at render time from the absence of a prefixed tag — never a tag.
@@ -451,8 +649,10 @@ export class GroupsPanel {
 
     const children = doc.createElement("div");
     children.className = "ac-children";
-    for (const annotation of annotations) {
-      children.append(this.buildAnnotation(doc, item, state, annotation, null));
+    if (!collapsed) {
+      for (const annotation of annotations) {
+        children.append(this.buildAnnotation(doc, item, state, annotation, null));
+      }
     }
     container.append(children);
     return container;
@@ -477,6 +677,11 @@ export class GroupsPanel {
     swatch.className = "ac-swatch";
     swatch.style.backgroundColor = annotation.color;
 
+    const mark = doc.createElement("span");
+    mark.className = "ac-type";
+    mark.textContent = TYPE_MARKS[annotation.type.toLowerCase()] ?? "•";
+    mark.title = annotation.type;
+
     const text = doc.createElement("span");
     text.className = "ac-annotation-text";
     text.textContent =
@@ -490,7 +695,7 @@ export class GroupsPanel {
     page.className = "ac-page";
     page.textContent = annotation.pageLabel;
 
-    row.append(swatch, text, page);
+    row.append(swatch, mark, text, page);
 
     row.addEventListener("click", (event) => {
       const range = event.shiftKey;
@@ -509,12 +714,15 @@ export class GroupsPanel {
         state.selection.add(annotation.id);
         state.lastClickedId = annotation.id;
       }
-      this.refresh();
+      // Selection only — repainting classes keeps this row alive so the second
+      // half of a double click still lands on it.
+      this.refreshSelection(item, state);
       if (!range && !toggle && getNavigateOnClick()) {
-        void this.navigateAlways(item, annotation.id);
+        this.scheduleNavigate(item, annotation.id);
       }
     });
     row.addEventListener("dblclick", () => {
+      this.cancelNavigate();
       ztoolkit.copyText(this.clipboardText(annotation));
       ztoolkit.notify("Annotation Compositor", "Copied to clipboard.");
     });
@@ -537,7 +745,26 @@ export class GroupsPanel {
 
   // -------------------------------------------------------------- interaction
 
-  /** Right-click on an annotation: add it (and the rest of the selection) to an existing folder. */
+  /**
+   * Hold the jump-to-annotation briefly: a double click is two clicks, and
+   * navigating on the first one would fight the copy the second one triggers.
+   */
+  private scheduleNavigate(item: Zotero.Item, annotationKey: string): void {
+    this.cancelNavigate();
+    this.clickTimer = setTimeout(() => {
+      this.clickTimer = null;
+      void this.navigateAlways(item, annotationKey);
+    }, DOUBLE_CLICK_MS);
+  }
+
+  private cancelNavigate(): void {
+    if (this.clickTimer !== null) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+  }
+
+  /** Right-click on an annotation: add it (and the rest of the selection) to a folder. */
   private annotationMenu(
     doc: Document,
     event: MouseEvent,
@@ -548,20 +775,20 @@ export class GroupsPanel {
     const ids = state.selection.has(annotation.id)
       ? [...state.selection].filter((id) => !id.startsWith("folder:"))
       : [annotation.id];
-    const records = this.host.service.load(item).records;
-    const paths = collectExistingPaths(records, getTagPrefix());
-    if (paths.length === 0) {
-      this.error("No folders exist yet for this item.");
-      return;
-    }
-    openPopupMenu(
-      doc,
-      event,
-      paths.map((path) => ({
-        label: path.join(FLAT_SEPARATOR),
-        onCommand: () => void this.assignToFolder(item, state, ids, path),
-      })),
-    );
+    // Includes folders created in this session that hold nothing yet — they
+    // have no tag, so a tag-only listing left them out of this menu entirely.
+    const paths = this.pathsFor(item);
+    const items = paths.map((path) => ({
+      label: path.join(FLAT_SEPARATOR),
+      onCommand: () => void this.assignToFolder(item, state, ids, path),
+    }));
+    openPopupMenu(doc, event, [
+      ...items,
+      {
+        label: paths.length > 0 ? "New folder…" : "New folder… (no folders yet)",
+        onCommand: () => void this.createFolder(item, state, [], ids),
+      },
+    ]);
   }
 
   private async assignToFolder(
@@ -580,20 +807,58 @@ export class GroupsPanel {
 
   /** Plain-text clipboard payload for one annotation: its text, its comment, or both. */
   private clipboardText(annotation: AnnotationRecord): string {
-    return [annotation.text, annotation.comment].filter((part) => part.length > 0).join("\n\n");
+    return [annotation.text, annotation.comment]
+      .filter((part) => part.length > 0)
+      .join("\n\n");
   }
 
   private async navigateAlways(item: Zotero.Item, annotationKey: string): Promise<void> {
     const annotation = this.host.service.load(item).itemsByKey.get(annotationKey);
-    if (annotation !== undefined) {
-      await openAndNavigate(annotation);
+    if (annotation === undefined) {
+      return;
+    }
+    if (!(await openAndNavigate(annotation))) {
+      this.error("Could not open the annotation in a reader.");
     }
   }
 
   private startDrag(event: DragEvent, payload: DragPayload): void {
-    event.dataTransfer?.setData(DRAG_MIME, JSON.stringify(payload));
-    if (event.dataTransfer !== null) {
-      event.dataTransfer.effectAllowed = "copyMove";
+    const transfer = event.dataTransfer;
+    if (transfer === null) {
+      return;
+    }
+    const raw = JSON.stringify(payload);
+    transfer.setData(DRAG_MIME, raw);
+    // Gecko will not start a drag whose DataTransfer carries only an unknown
+    // custom type; the plain-text copy makes the drag valid and doubles as the
+    // read-back path when the custom type does not survive the drop.
+    transfer.setData("text/plain", raw);
+    transfer.effectAllowed = "copyMove";
+  }
+
+  /** Read a drag payload back, tolerating the loss of the custom MIME type. */
+  private readDrag(event: DragEvent): DragPayload | null {
+    const transfer = event.dataTransfer;
+    if (transfer === null) {
+      return null;
+    }
+    const raw = transfer.getData(DRAG_MIME) || transfer.getData("text/plain");
+    if (raw.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<DragPayload>;
+      return Array.isArray(parsed.ids) &&
+        (parsed.folderKey === null || typeof parsed.folderKey === "string")
+        ? {
+            ids: parsed.ids,
+            sourceKey: typeof parsed.sourceKey === "string" ? parsed.sourceKey : null,
+            folderKey: parsed.folderKey ?? null,
+          }
+        : null;
+    } catch {
+      // Something else was dropped on the panel (a file, a Zotero item, text).
+      return null;
     }
   }
 
@@ -603,23 +868,42 @@ export class GroupsPanel {
     state: PanelState,
     target: FolderPath,
   ): void {
-    row.addEventListener("dragover", (event) => {
+    // dragenter/dragleave also fire when the pointer crosses a child element,
+    // so the highlight is reference-counted instead of toggled.
+    let depth = 0;
+    const clear = (): void => {
+      depth = 0;
+      row.classList.remove("ac-droptarget");
+    };
+    row.addEventListener("dragenter", (event) => {
       event.preventDefault();
+      depth += 1;
+      row.classList.add("ac-droptarget");
+    });
+    row.addEventListener("dragover", (event) => {
+      // Without preventDefault on every dragover Gecko refuses the drop
+      // outright, which is what made folder-onto-folder nesting a no-op.
+      event.preventDefault();
+      event.stopPropagation();
       if (event.dataTransfer !== null) {
         event.dataTransfer.dropEffect = this.isAddModifier(event) ? "copy" : "move";
       }
       row.classList.add("ac-droptarget");
     });
-    row.addEventListener("dragleave", () => row.classList.remove("ac-droptarget"));
+    row.addEventListener("dragleave", () => {
+      depth -= 1;
+      if (depth <= 0) {
+        clear();
+      }
+    });
     row.addEventListener("drop", (event) => {
       event.preventDefault();
-      row.classList.remove("ac-droptarget");
-      const raw = event.dataTransfer?.getData(DRAG_MIME);
-      if (raw === undefined || raw.length === 0) {
-        return;
+      event.stopPropagation();
+      clear();
+      const payload = this.readDrag(event);
+      if (payload !== null) {
+        void this.handleDrop(item, state, payload, target, this.isAddModifier(event));
       }
-      const payload = JSON.parse(raw) as DragPayload;
-      void this.handleDrop(item, state, payload, target, this.isAddModifier(event));
     });
   }
 
@@ -636,18 +920,14 @@ export class GroupsPanel {
     addOnly: boolean,
   ): Promise<void> {
     if (payload.folderKey !== null) {
-      // Dragging a folder node reparents that folder and its whole subtree.
-      const source = keyToPath(payload.folderKey);
-      const outcome = await this.host.service.mutate(
-        item,
-        "pre-reparent",
-        (records, prefix) => reparentFolder(records, prefix, source, target),
-      );
-      this.report(outcome);
-      this.refresh();
+      await this.moveFolder(item, state, keyToPath(payload.folderKey), target);
       return;
     }
     if (payload.ids.length === 0) {
+      return;
+    }
+    if (target.length === 0) {
+      // Annotations dropped on the tree background have nowhere to go.
       return;
     }
     // A drag out of the derived Ungrouped bucket has no source tag to remove,
@@ -664,7 +944,37 @@ export class GroupsPanel {
         }),
     );
     this.noteRecent(state, pathKey(target));
+    // The destination now holds something, so it is no longer a pending folder.
+    state.pendingFolderKeys.delete(pathKey(target));
     this.report(outcome);
+    this.refresh();
+  }
+
+  /**
+   * Reparent `source` under `newParent` (`[]` = top level), which is how a
+   * folder becomes a subfolder of another. A folder that exists only in UI
+   * state has no tags to rewrite, so it is moved in UI state alone.
+   */
+  private async moveFolder(
+    item: Zotero.Item,
+    state: PanelState,
+    source: FolderPath,
+    newParent: FolderPath,
+  ): Promise<void> {
+    const target = [...newParent, source[source.length - 1]];
+    if (pathKey(target) === pathKey(source)) {
+      return;
+    }
+    const outcome = await this.host.service.mutate(
+      item,
+      "pre-reparent",
+      (records, prefix) => reparentFolder(records, prefix, source, newParent),
+    );
+    if (!outcome.ok) {
+      this.report(outcome);
+      return;
+    }
+    this.remapState(state, source, target);
     this.refresh();
   }
 
@@ -675,15 +985,40 @@ export class GroupsPanel {
     state: PanelState,
     folder: FolderNode,
   ): void {
+    const isSticky = pathKey(this.host.sticky.active() ?? []) === folder.key;
+    // Every folder except this one and its own descendants is a legal new
+    // parent; "Top level" un-nests. This is the menu-driven twin of dragging a
+    // folder onto another folder.
+    const destinations = this.pathsFor(item).filter(
+      (path) =>
+        pathKey(path) !== folder.key && !pathKey(path).startsWith(`${folder.key}/`),
+    );
     openPopupMenu(doc, event, [
-      { label: "Rename…", onCommand: () => void this.renameFolder(item, folder.path) },
+      {
+        label: "Rename…",
+        onCommand: () => void this.renameFolder(item, state, folder.path),
+      },
       {
         label: "New subfolder…",
         onCommand: () => void this.createFolder(item, state, folder.path),
       },
-      { label: "Delete folder", onCommand: () => void this.deleteFolder(item, folder.path) },
-      { label: "Pin as sticky group", onCommand: () => this.setSticky(folder.path) },
-      { label: "Clear sticky group", onCommand: () => this.setSticky(null) },
+      {
+        label: "Move to top level",
+        disabled: folder.path.length === 1,
+        onCommand: () => void this.moveFolder(item, state, folder.path, []),
+      },
+      ...destinations.map((path) => ({
+        label: `Move into: ${path.join(FLAT_SEPARATOR)}`,
+        onCommand: () => void this.moveFolder(item, state, folder.path, path),
+      })),
+      {
+        label: "Delete folder",
+        onCommand: () => void this.deleteFolder(item, folder.path),
+      },
+      {
+        label: isSticky ? "Unpin sticky group" : "Pin as sticky group",
+        onCommand: () => this.setSticky(isSticky ? null : folder.path),
+      },
     ]);
   }
 
@@ -691,19 +1026,57 @@ export class GroupsPanel {
     const tabs = Zotero.getMainWindow()?.Zotero_Tabs;
     if (typeof tabs?.selectedID === "string") {
       this.host.sticky.set(tabs.selectedID, path);
+      this.refresh();
     }
   }
 
-  private promptForName(title: string, initial: string): string | null {
-    return promptText(title, "Folder name:", initial);
-  }
-
+  /**
+   * Create a folder. `assignIds`, when given, are filed into it immediately —
+   * which is also what makes the folder real, since an empty folder has no tag.
+   */
   private async createFolder(
     item: Zotero.Item,
     state: PanelState,
     parent: FolderPath,
+    assignIds: readonly string[] = [],
   ): Promise<void> {
-    const raw = this.promptForName("New folder", "");
+    const answer = promptTextChecked(
+      "New folder",
+      "Folder name:",
+      "",
+      "Pin as this tab's sticky folder",
+      getStickyOnCreate(),
+    );
+    if (answer === null) {
+      return;
+    }
+    const check = validateFolderName(answer.value);
+    if (!check.ok || check.value === undefined) {
+      this.error(check.error ?? "Invalid folder name.");
+      return;
+    }
+    const path = [...parent, check.value];
+    const key = pathKey(path);
+    if (answer.checked) {
+      this.setSticky(path);
+    }
+    if (assignIds.length > 0) {
+      await this.assignToFolder(item, state, assignIds, path);
+      return;
+    }
+    // An empty folder cannot exist as a tag, so it lives in UI state until the
+    // first annotation is assigned to it.
+    state.pendingFolderKeys.add(key);
+    this.noteRecent(state, key);
+    this.refresh();
+  }
+
+  private async renameFolder(
+    item: Zotero.Item,
+    state: PanelState,
+    path: FolderPath,
+  ): Promise<void> {
+    const raw = promptText("Rename folder", "Folder name:", path[path.length - 1]);
     if (raw === null) {
       return;
     }
@@ -712,25 +1085,19 @@ export class GroupsPanel {
       this.error(check.error ?? "Invalid folder name.");
       return;
     }
-    // An empty folder cannot exist as a tag, so it lives in UI state until the
-    // first annotation is assigned to it.
-    const key = pathKey([...parent, check.value]);
-    state.pendingFolderKeys.add(key);
-    this.noteRecent(state, key);
-    this.refresh();
-  }
-
-  private async renameFolder(item: Zotero.Item, path: FolderPath): Promise<void> {
-    const raw = this.promptForName("Rename folder", path[path.length - 1]);
-    if (raw === null) {
-      return;
-    }
+    const target = [...path.slice(0, -1), check.value];
     const outcome = await this.host.service.mutate(
       item,
       "pre-rename",
-      (records, prefix) => renameFolder(records, prefix, path, raw),
+      (records, prefix) => renameFolder(records, prefix, path, check.value as string),
     );
-    this.report(outcome);
+    if (!outcome.ok) {
+      this.report(outcome);
+      return;
+    }
+    // Carry collapse state onto the new key, so a collapsed folder stays
+    // collapsed instead of springing open under its new name.
+    this.remapState(state, path, target);
     this.refresh();
   }
 
@@ -744,15 +1111,19 @@ export class GroupsPanel {
       return;
     }
     const state = this.state(item.key);
+    const prefix = pathKey(path);
     for (const key of [...state.pendingFolderKeys]) {
-      if (key === pathKey(path) || key.startsWith(`${pathKey(path)}/`)) {
+      if (key === prefix || key.startsWith(`${prefix}/`)) {
         state.pendingFolderKeys.delete(key);
       }
     }
-    const outcome = await this.host.service.mutate(
-      item,
-      "pre-delete",
-      (records, prefix) => deleteFolder(records, prefix, path),
+    for (const key of [...state.collapsedKeys]) {
+      if (key === prefix || key.startsWith(`${prefix}/`)) {
+        state.collapsedKeys.delete(key);
+      }
+    }
+    const outcome = await this.host.service.mutate(item, "pre-delete", (records, p) =>
+      deleteFolder(records, p, path),
     );
     this.report(outcome);
     this.refresh();

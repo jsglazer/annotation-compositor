@@ -162,6 +162,29 @@ export function parentPath(path: FolderPath): string[] {
   return path.slice(0, Math.max(0, path.length - 1));
 }
 
+/**
+ * Rewrite one UI-state key so it still names the same folder after `source` was
+ * moved or renamed to `target`. Keys outside the moved subtree come back
+ * unchanged, which is what keeps collapse state (and pending empty folders)
+ * attached to a folder across a rename instead of silently resetting it — the
+ * reason a renamed folder used to spring back open.
+ */
+export function remapKey(key: string, source: FolderPath, target: FolderPath): string {
+  const path = keyToPath(key);
+  return isAtOrBelow(path, source)
+    ? pathKey([...target, ...path.slice(source.length)])
+    : key;
+}
+
+/** {@link remapKey} over a whole set of keys, deduplicated. */
+export function remapKeys(
+  keys: Iterable<string>,
+  source: FolderPath,
+  target: FolderPath,
+): string[] {
+  return [...new Set([...keys].map((key) => remapKey(key, source, target)))];
+}
+
 /** Deterministic ordering for paths: segment-wise, case-sensitive. */
 export function comparePaths(a: FolderPath, b: FolderPath): number {
   const shared = Math.min(a.length, b.length);

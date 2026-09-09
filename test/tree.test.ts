@@ -99,3 +99,30 @@ describe("buildViewModel", () => {
     ]);
   });
 });
+
+describe("buildViewModel type filter", () => {
+  const mixed = [
+    annotation("h1", ["grp/A"], { type: "highlight" }),
+    annotation("u1", ["grp/A"], { type: "underline" }),
+    annotation("n1", [], { type: "note" }),
+  ];
+
+  it("keeps every type when no filter is given", () => {
+    expect(buildViewModel(mixed, PREFIX, {}).totalCount).toBe(3);
+    expect(buildViewModel(mixed, PREFIX, { types: [] }).totalCount).toBe(3);
+  });
+
+  it("keeps only the requested types, matched case-insensitively", () => {
+    const only = buildViewModel(mixed, PREFIX, { types: ["Underline"] });
+    expect(only.totalCount).toBe(1);
+    expect(only.folders[0].annotationIds).toEqual(["u1"]);
+    expect(only.ungrouped).toEqual([]);
+  });
+
+  it("filters the ungrouped bucket too, and accepts several types", () => {
+    const both = buildViewModel(mixed, PREFIX, { types: ["note", "highlight"] });
+    expect(both.totalCount).toBe(2);
+    expect(both.ungrouped.map((a) => a.id)).toEqual(["n1"]);
+    expect(both.folders[0].annotationIds).toEqual(["h1"]);
+  });
+});

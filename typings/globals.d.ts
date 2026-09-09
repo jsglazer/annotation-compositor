@@ -10,10 +10,20 @@ declare const ztoolkit: import("../src/adapters/toolkit.js").CompositorToolkit;
 
 // Gecko globals available in the plugin sandbox (Zotero 7+ / Firefox 115 ESR).
 declare const IOUtils: {
-  makeDirectory(path: string, options?: { createAncestors?: boolean; ignoreExisting?: boolean }): Promise<void>;
-  writeUTF8(path: string, data: string, options?: { mode?: string; tmpPath?: string }): Promise<number>;
+  makeDirectory(
+    path: string,
+    options?: { createAncestors?: boolean; ignoreExisting?: boolean },
+  ): Promise<void>;
+  writeUTF8(
+    path: string,
+    data: string,
+    options?: { mode?: string; tmpPath?: string },
+  ): Promise<number>;
   readUTF8(path: string): Promise<string>;
-  remove(path: string, options?: { ignoreAbsent?: boolean; recursive?: boolean }): Promise<void>;
+  remove(
+    path: string,
+    options?: { ignoreAbsent?: boolean; recursive?: boolean },
+  ): Promise<void>;
   getChildren(path: string, options?: { ignoreAbsent?: boolean }): Promise<string[]>;
   exists(path: string): Promise<boolean>;
 };

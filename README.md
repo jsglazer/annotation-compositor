@@ -44,14 +44,14 @@ The path separator `/` is reserved, so a folder name may not contain it. Names a
 
 ## Preferences
 
-| Preference                         | Default             | What it does                                                                          |
-| ---------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
-| `tagPrefix`                        | `grp`               | Namespace for group tags. Changing it runs a confirm-gated, snapshot-backed migration |
-| `tagType`                          | `0` (manual)        | Manual or automatic tags for group membership                                         |
-| `navigateOnClick`                  | `true`              | Clicking an annotation row scrolls the reader to it                                   |
-| `persistStickyGroup`               | `false`             | Remember sticky groups across sessions                                                |
-| `useCustomSelectionColor` / `selectionColor` | `false` / `#2ea8e5` | Override the selected-row background with a custom highlight color         |
-| `templateId` / `includeSubfolders` / `includeUngrouped` | `markdown` / `true` / `true` | Export defaults                                                        |
+| Preference                                              | Default                      | What it does                                                                          |
+| ------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `tagPrefix`                                             | `grp`                        | Namespace for group tags. Changing it runs a confirm-gated, snapshot-backed migration |
+| `tagType`                                               | `0` (manual)                 | Manual or automatic tags for group membership                                         |
+| `navigateOnClick`                                       | `true`                       | Clicking an annotation row scrolls the reader to it                                   |
+| `persistStickyGroup`                                    | `false`                      | Remember sticky groups across sessions                                                |
+| `useCustomSelectionColor` / `selectionColor`            | `false` / `#2ea8e5`          | Override the selected-row background with a custom highlight color                    |
+| `templateId` / `includeSubfolders` / `includeUngrouped` | `markdown` / `true` / `true` | Export defaults                                                                       |
 
 ## Development
 

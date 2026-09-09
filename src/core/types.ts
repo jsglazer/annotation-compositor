@@ -93,7 +93,23 @@ export interface UiState {
   readonly pendingFolderKeys?: readonly string[];
   /** Case-insensitive substring filter over annotation text/comment/folder. */
   readonly filter?: string;
+  /**
+   * Annotation types to keep (`highlight`, `underline`, `note`, …). Empty or
+   * absent means every type. Matched case-insensitively against
+   * {@link AnnotationRecord.type}.
+   */
+  readonly types?: readonly string[];
 }
+
+/** Annotation types Zotero can produce, in the order the UI offers them. */
+export const ANNOTATION_TYPES = [
+  "highlight",
+  "underline",
+  "note",
+  "image",
+  "ink",
+  "text",
+] as const;
 
 /** The whole rendered panel, as plain objects. */
 export interface PanelViewModel {

@@ -138,6 +138,7 @@ export function buildViewModel(
 ): PanelViewModel {
   const needle = (uiState.filter ?? "").trim().toLowerCase();
   const collapsed = new Set(uiState.collapsedKeys ?? []);
+  const types = new Set((uiState.types ?? []).map((type) => type.toLowerCase()));
 
   const roots = new Map<string, MutableNode>();
   const byId: Record<string, AnnotationRecord> = {};
@@ -145,6 +146,9 @@ export function buildViewModel(
   let totalCount = 0;
 
   for (const annotation of annotations) {
+    if (types.size > 0 && !types.has(annotation.type.toLowerCase())) {
+      continue;
+    }
     const paths = groupPaths(annotation.tags, tagPrefix);
     if (!matchesFilter(annotation, paths, needle)) {
       continue;

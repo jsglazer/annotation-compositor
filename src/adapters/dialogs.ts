@@ -22,6 +22,35 @@ export function promptText(title: string, message: string, initial = ""): string
   return accepted ? value.value : null;
 }
 
+/**
+ * Ask for a line of text plus one checkbox — the prompt service has always
+ * carried a checkbox slot, so this needs no custom XUL dialog.
+ * Returns `null` when the user cancels.
+ */
+export function promptTextChecked(
+  title: string,
+  message: string,
+  initial: string,
+  checkboxLabel: string,
+  checkedInitial: boolean,
+): { value: string; checked: boolean } | null {
+  const window = parent();
+  if (window === null) {
+    return null;
+  }
+  const value = { value: initial };
+  const check = { value: checkedInitial };
+  const accepted = Services.prompt.prompt(
+    window,
+    title,
+    message,
+    value,
+    checkboxLabel,
+    check,
+  );
+  return accepted ? { value: value.value, checked: check.value } : null;
+}
+
 /** Yes/no confirmation. Returns false when there is no window to prompt on. */
 export function confirm(title: string, message: string): boolean {
   const window = parent();

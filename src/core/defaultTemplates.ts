@@ -40,7 +40,8 @@ export const MARKDOWN_PRESET: TemplatePreset = {
 {{/folders}}{{#hasUngrouped}}## Ungrouped
 
 {{#ungrouped}}- {{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} (p. {{pageLabel}}){{/pageLabel}}
-{{/ungrouped}}{{/hasUngrouped}}`,
+{{#hasComment}}  - {{comment}}
+{{/hasComment}}{{/ungrouped}}{{/hasUngrouped}}`,
   partials: { folder: MARKDOWN_FOLDER },
 };
 
@@ -53,7 +54,7 @@ export const HTML_PRESET: TemplatePreset = {
 {{#folders}}<section><h2>{{path}}</h2>
 {{>folder}}</section>
 {{/folders}}{{#hasUngrouped}}<section><h2>Ungrouped</h2><ul>
-{{#ungrouped}}<li>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}</li>
+{{#ungrouped}}<li>{{#hasText}}{{text}}{{/hasText}}{{^hasText}}({{type}}){{/hasText}}{{#pageLabel}} <em>p. {{pageLabel}}</em>{{/pageLabel}}{{#hasComment}}<div class="ac-comment">{{comment}}</div>{{/hasComment}}</li>
 {{/ungrouped}}</ul></section>
 {{/hasUngrouped}}`,
   partials: { folder: HTML_FOLDER },

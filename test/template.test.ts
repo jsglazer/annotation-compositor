@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TemplateError, parseTemplate, renderTemplate } from "../src/core/template.js";
-import { MARKDOWN_PRESET } from "../src/core/defaultTemplates.js";
+import { HTML_PRESET, MARKDOWN_PRESET } from "../src/core/defaultTemplates.js";
 import { buildExportContext } from "../src/core/exportModel.js";
 import { PREFIX, annotation, sampleAnnotations } from "./fixtures.js";
 
@@ -102,5 +102,34 @@ describe("mustache subset", () => {
       partials: MARKDOWN_PRESET.partials,
     });
     expect(once).toBe(twice);
+  });
+});
+
+describe("shipped presets carry annotation comments", () => {
+  const withComments = [
+    annotation("g1", ["grp/A"], { comment: "grouped note" }),
+    annotation("u1", [], { comment: "ungrouped note" }),
+  ];
+
+  const render = (preset: typeof MARKDOWN_PRESET): string =>
+    renderTemplate(
+      preset.template,
+      buildExportContext(withComments, PREFIX, {
+        selectedPaths: [["A"]],
+        includeUngrouped: true,
+      }),
+      preset.partials,
+    );
+
+  it("emits comments for grouped AND ungrouped annotations (markdown)", () => {
+    const out = render(MARKDOWN_PRESET);
+    expect(out).toContain("grouped note");
+    expect(out).toContain("ungrouped note");
+  });
+
+  it("emits comments for grouped AND ungrouped annotations (html)", () => {
+    const out = render(HTML_PRESET);
+    expect(out).toContain("grouped note");
+    expect(out).toContain("ungrouped note");
   });
 });

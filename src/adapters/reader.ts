@@ -38,6 +38,20 @@ export function activeReaderAttachmentID(): number | null {
 }
 
 /**
+ * The location descriptor the reader understands for "scroll to this annotation".
+ *
+ * The reader keys annotations by `annotationID`, and the value it stores there
+ * IS the Zotero item key — which is why `selectedAnnotationIDs` below yields
+ * item keys. Passing `annotationKey` instead (what an earlier version did) is
+ * silently ignored by the reader, so nothing ever scrolled. `annotationKey` is
+ * still sent alongside: unknown keys are harmless, and it keeps the call
+ * working if a future reader renames the field back.
+ */
+function annotationLocation(annotation: Zotero.Item): Record<string, string> {
+  return { annotationID: annotation.key, annotationKey: annotation.key };
+}
+
+/**
  * Scroll the reader to an annotation. Returns false — never throws — when the
  * reader or its tab has gone away, or when the annotation has no parent.
  */
@@ -50,12 +64,21 @@ export function navigateToAnnotation(annotation: Zotero.Item): boolean {
   if (reader === null) {
     return false;
   }
+  // navigate() only scrolls within the reader itself — it never brings a
+  // background reader tab to the foreground, which made clicks silently
+  // no-op whenever the annotation's reader tab wasn't already selected.
+  // Its own try/catch: a tab-select failure must not skip the navigate below,
+  // which is what made the whole click a no-op.
   try {
-    // navigate() only scrolls within the reader itself — it never brings a
-    // background reader tab to the foreground, which made clicks silently
-    // no-op whenever the annotation's reader tab wasn't already selected.
-    Zotero.getMainWindow()?.Zotero_Tabs.select(reader.tabID);
-    reader.navigate({ annotationKey: annotation.key });
+    const tabID = (reader as unknown as { tabID?: string }).tabID;
+    if (typeof tabID === "string") {
+      Zotero.getMainWindow()?.Zotero_Tabs.select(tabID);
+    }
+  } catch {
+    // Tab gone or not selectable — still worth trying to scroll the reader.
+  }
+  try {
+    reader.navigate(annotationLocation(annotation) as never);
     return true;
   } catch {
     return false;
@@ -69,8 +92,10 @@ export async function openAndNavigate(annotation: Zotero.Item): Promise<boolean>
     return false;
   }
   if (findReader(attachmentID) === null) {
-    await Zotero.Reader.open(attachmentID, { annotationKey: annotation.key });
-    return findReader(attachmentID) !== null;
+    await Zotero.Reader.open(attachmentID, annotationLocation(annotation) as never);
+    // Opening positions the reader itself, but a freshly-opened reader can
+    // finish loading after open() resolves; navigate again once it exists.
+    return navigateToAnnotation(annotation) || findReader(attachmentID) !== null;
   }
   return navigateToAnnotation(annotation);
 }

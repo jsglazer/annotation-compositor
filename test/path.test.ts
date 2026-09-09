@@ -7,6 +7,8 @@ import {
   parseTag,
   validateFolderName,
   validatePath,
+  remapKey,
+  remapKeys,
 } from "../src/core/path.js";
 
 describe("path grammar", () => {
@@ -47,5 +49,24 @@ describe("path grammar", () => {
     expect(isAtOrBelow(["A"], ["A"])).toBe(true);
     expect(isBelow(["A"], ["A"])).toBe(false);
     expect(isAtOrBelow(["AB"], ["A"])).toBe(false);
+  });
+});
+
+describe("remapKey", () => {
+  it("moves keys at or below the source onto the target", () => {
+    expect(remapKey("A", ["A"], ["B"])).toBe("B");
+    expect(remapKey("A/C", ["A"], ["B"])).toBe("B/C");
+    expect(remapKey("A/C/D", ["A"], ["X", "A"])).toBe("X/A/C/D");
+  });
+
+  it("leaves unrelated keys alone, prefix lookalikes included", () => {
+    expect(remapKey("AB", ["A"], ["B"])).toBe("AB");
+    expect(remapKey("Z/A", ["A"], ["B"])).toBe("Z/A");
+    expect(remapKey("", ["A"], ["B"])).toBe("");
+  });
+
+  it("remaps a whole set and deduplicates the result", () => {
+    expect(remapKeys(["A", "A/C", "Z"], ["A"], ["B"]).sort()).toEqual(["B", "B/C", "Z"]);
+    expect(remapKeys(["A", "B"], ["A"], ["B"])).toEqual(["B"]);
   });
 });

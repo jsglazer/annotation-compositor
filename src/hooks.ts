@@ -2,7 +2,6 @@
  * Lifecycle hooks. This is the boundary where the Zotero globals enter the
  * plugin: everything below `src/core/` receives plain data instead.
  */
-import { collectExistingPaths } from "./core/tree.js";
 import { keyToPath } from "./core/path.js";
 import type { FolderPath } from "./core/types.js";
 import { assignAnnotations } from "./core/rewrite.js";
@@ -14,14 +13,19 @@ import { assignNewAnnotations } from "./modules/autoAssign.js";
 import { NotifierService } from "./modules/notifier.js";
 import { GroupsPanel } from "./modules/panel.js";
 import {
+  PREF_KEYS,
+  SYNCED_PREF_KEYS,
   getPersistedStickyGroups,
-  getTagPrefix,
   getWarningAcknowledged,
   setPersistedStickyGroups,
   setWarningAcknowledged,
 } from "./modules/prefs.js";
+import { SettingsSync } from "./modules/settingsSync.js";
 
 let addon: Addon | null = null;
+let settingsSync: SettingsSync | null = null;
+/** Pref-observer handles, so the observers are removed again on shutdown. */
+let prefObservers: symbol[] = [];
 
 /** The item the reader context menu is acting on, resolved from an annotation. */
 function itemForAnnotations(keys: readonly string[]): Zotero.Item | null {
@@ -51,9 +55,9 @@ function buildAddon(): Addon {
     const readerMenu = new ReaderMenuAdapter({
       pathsFor: (keys): FolderPath[] => {
         const item = itemForAnnotations(keys);
-        return item === null
-          ? []
-          : collectExistingPaths(self.service.load(item).records, getTagPrefix());
+        // The panel's listing, not the raw tag listing: it also carries the
+        // folders created in this session that hold nothing yet.
+        return item === null ? [] : panel.pathsFor(item);
       },
       recentsFor: (keys): string[] => {
         const item = itemForAnnotations(keys);
@@ -85,6 +89,35 @@ function buildAddon(): Addon {
   });
 }
 
+/**
+ * Push the settings up whenever one of them changes. Every synced pref gets its
+ * own observer; the sync itself is debounced, so a burst of edits in the
+ * preferences pane still produces a single write.
+ */
+function registerPrefObservers(sync: SettingsSync): void {
+  const watched = [...SYNCED_PREF_KEYS, PREF_KEYS.syncSettings];
+  for (const key of watched) {
+    try {
+      prefObservers.push(
+        Zotero.Prefs.registerObserver(key, () => sync.schedulePush(), true) as symbol,
+      );
+    } catch {
+      // A pref that cannot be observed simply syncs on the next shutdown flush.
+    }
+  }
+}
+
+function unregisterPrefObservers(): void {
+  for (const id of prefObservers) {
+    try {
+      Zotero.Prefs.unregisterObserver(id);
+    } catch {
+      // Already gone.
+    }
+  }
+  prefObservers = [];
+}
+
 /** Called from `bootstrap.js` once Zotero is ready. */
 export async function onStartup(rootURI: string): Promise<void> {
   await Zotero.initializationPromise;
@@ -93,6 +126,12 @@ export async function onStartup(rootURI: string): Promise<void> {
   // The toolkit facade is exposed as a sandbox global so UI code can reach it
   // without threading it through every constructor.
   (globalThis as unknown as { ztoolkit: Addon["toolkit"] }).ztoolkit = addon.toolkit;
+
+  // Adopt any settings synced from another machine BEFORE anything reads a
+  // pref, so the first render already uses them.
+  settingsSync = new SettingsSync();
+  settingsSync.pull();
+  registerPrefObservers(settingsSync);
 
   for (const [tabID, path] of Object.entries(getPersistedStickyGroups())) {
     addon.sticky.set(tabID, path as FolderPath);
@@ -133,6 +172,9 @@ export function onShutdown(): void {
     return;
   }
   setPersistedStickyGroups(addon.sticky.toJSON());
+  unregisterPrefObservers();
+  settingsSync?.unregister();
+  settingsSync = null;
   addon.notifier.unregister();
   addon.readerMenu.unregister();
   addon.readerMenu.resetProbe();

@@ -4,6 +4,10 @@
 <groupbox>
   <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
 
+  <!-- __buildVersion__ is substituted from package.json at build time, so the
+       pane can never drift from the installed version. -->
+  <description class="ac-pref-version">Version __buildVersion__</description>
+
   <hbox align="center">
     <html:label
       for="annotationcompositor-pref-tagPrefix"
@@ -52,6 +56,20 @@
     preference="__prefsPrefix__.includeUngrouped"
     data-l10n-id="pref-include-ungrouped"
   />
+  <checkbox
+    id="annotationcompositor-pref-stickyOnCreate"
+    preference="__prefsPrefix__.stickyOnCreate"
+    data-l10n-id="pref-sticky-on-create"
+  />
+
+  <separator class="thin"></separator>
+
+  <checkbox
+    id="annotationcompositor-pref-syncSettings"
+    preference="__prefsPrefix__.syncSettings"
+    data-l10n-id="pref-sync-settings"
+  />
+  <description data-l10n-id="pref-sync-settings-description"></description>
 
   <separator class="thin"></separator>
 
@@ -79,7 +97,10 @@
       for="annotationcompositor-pref-templateId"
       data-l10n-id="pref-template-label"
     ></html:label>
-    <menulist id="annotationcompositor-pref-templateId" preference="__prefsPrefix__.templateId">
+    <menulist
+      id="annotationcompositor-pref-templateId"
+      preference="__prefsPrefix__.templateId"
+    >
       <menupopup>
         <menuitem value="markdown" data-l10n-id="pref-template-markdown"></menuitem>
         <menuitem value="html" data-l10n-id="pref-template-html"></menuitem>
