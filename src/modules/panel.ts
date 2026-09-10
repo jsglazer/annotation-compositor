@@ -80,6 +80,8 @@ interface PanelState {
   visibleOrder: string[];
   /** Shift-click range anchor: the last annotation clicked without a modifier. */
   lastClickedId: string | null;
+  /** False until the first render has collapsed this item's folders. */
+  seeded: boolean;
 }
 
 interface DragPayload {
@@ -262,6 +264,7 @@ export class GroupsPanel {
         recents: [],
         visibleOrder: [],
         lastClickedId: null,
+        seeded: false,
       };
       this.stateByItem.set(itemKey, state);
     }
@@ -371,7 +374,19 @@ export class GroupsPanel {
       body.style.removeProperty("--ac-selection-color");
     }
     const records = this.host.service.load(item).records;
-    const model = buildViewModel(records, prefix, this.uiState(state));
+    let model = buildViewModel(records, prefix, this.uiState(state));
+    // First render of this item: every folder starts collapsed, so an item with
+    // a few hundred highlights opens as a short list of folder names instead of
+    // the whole tree. Nothing is collapsed yet at this point, so the model still
+    // holds every folder — after this the user's own collapse state stands, for
+    // as long as the panel keeps this item's state.
+    if (!state.seeded) {
+      state.seeded = true;
+      for (const key of collectFolderKeys(model.folders)) {
+        state.collapsedKeys.add(key);
+      }
+      model = buildViewModel(records, prefix, this.uiState(state));
+    }
     const ungroupedCollapsed = state.collapsedKeys.has(UNGROUPED_KEY);
     state.visibleOrder = this.renderOrder(
       model.folders,
