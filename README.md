@@ -2,7 +2,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/jsglazer/annotation-compositor?logo=github)](https://github.com/jsglazer/annotation-compositor/releases) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/jsglazer/annotation-compositor/blob/main/LICENSE) [![Made with Claude](https://img.shields.io/badge/Made_with-Claude-D97756?logo=anthropic)](https://claude.ai) [![Gemini Flash Antigravity](https://img.shields.io/badge/Gemini%20Flash-Antigravity-4f86f7?logo=google-gemini&logoColor=white)](https://github.com/google-gemini)
 
-A Zotero plugin that adds a folder/subfolder organisation layer over the annotations of a single item. Zotero's annotation sidebar is a flat list; once a PDF carries a few hundred highlights, that list stops being usable. Annotation Compositor gives those annotations a tree — with multi-membership, colour-driven auto-assignment, a per-tab sticky group, and templated export — without a sidecar database and without touching the PDF.
+A Zotero plugin that adds a folder/subfolder organisation layer over the annotations of a single item. Zotero's annotation sidebar is a flat list; once a PDF carries a few hundred highlights, that list stops being usable. Annotation Compositor gives those annotations a tree — with multi-membership, colour-driven auto-assignment, a per-item sticky folder, and templated export — without a sidecar database and without touching the PDF.
 
 ## How it works
 
@@ -27,8 +27,8 @@ Group tags are **automatic (type 1)** tags by default, so they stay out of the t
 - **Reader context menu** — "Add to group ▸" on right-click, nested when the reader supports submenus and flat `A > B > C` labels when it does not. Above 25 folders the menu collapses to a recents list plus a modal picker
 - **Panel context menu** — right-click an annotation to file it in an existing folder or a brand-new one, or a folder for Rename / New subfolder / Move / Delete / Pin as sticky group, in a popup menu at the cursor. Folders you have just created and not yet filled appear in these menus too, even though an empty folder has no tag to be found by
 - **Colour rules** — map an annotation colour to one or more folders, library-wide with optional per-item overrides. Rules fire at creation time only and are purely additive
-- **Sticky group** — pin a folder to a reader tab so new annotations join it automatically; the pinned folder is marked 📌 in the tree, the new-folder dialog can pin as it creates, and the pin is optionally persisted across sessions
-- **Settings sync** — preferences ride along with your Zotero account through Zotero's own synced-settings channel, so a second machine picks up your prefix, templates and colours. Per-tab pinned folders stay local, since a reader tab means nothing on another machine
+- **Sticky group** — pin a folder to an item so that item's new annotations join it automatically; the pinned folder is marked 📌 in the tree, the new-folder dialog can pin as it creates, and the pin is optionally persisted across sessions
+- **Settings sync** — preferences ride along with your Zotero account through Zotero's own synced-settings channel, so a second machine picks up your prefix, templates and colours. Pinned folders stay local, as working state rather than a setting
 - **Templated export** — Mustache-subset templates (`{{var}}`, `{{#section}}`, `{{^inverted}}`, self-referencing partials for subfolder traversal) with Markdown and HTML defaults, include-subfolders and include-ungrouped toggles, ordering by `annotationSortIndex`, defaulting to file (clipboard is the other option). Each annotation renders the same `{text} (Color: page)` format as double-click copy. The document title uses the item's Better BibTeX citation key when one is available, falling back to its display title
 - **Snapshots** — a rolling JSON snapshot is written before every group-tag write, to `<Zotero data directory>/annotation-compositor/snapshots/`. **Restore previous grouping** shows a diff preview before it writes, and is the undo path
 
@@ -51,7 +51,7 @@ The path separator `/` is reserved, so a folder name may not contain it. Names a
 | `tagPrefix`                                             | `grp`                        | Namespace for group tags. Changing it runs a confirm-gated, snapshot-backed migration |
 | `tagType`                                               | `1` (automatic)              | Manual or automatic tags for group membership                                         |
 | `navigateOnClick`                                       | `true`                       | Clicking an annotation row scrolls the reader to it                                   |
-| `persistStickyGroup`                                    | `false`                      | Remember sticky groups across sessions                                                |
+| `persistStickyGroup`                                    | `true`                       | Remember each item's pinned folder across sessions                                    |
 | `stickyOnCreate`                                        | `false`                      | Pre-tick "pin as sticky folder" in the new-folder dialog                              |
 | `pinGroupsPanel`                                        | `true`                       | Pin the Groups panel as the item pane's default view on every Zotero startup          |
 | `syncSettings`                                          | `true`                       | Mirror these settings through Zotero sync so they follow your account                 |
