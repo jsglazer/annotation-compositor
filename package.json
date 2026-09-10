@@ -1,6 +1,6 @@
 {
   "name": "annotation-compositor",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Zotero plugin adding a folder/subfolder organisation layer over the annotations of a single item, with multi-membership, colour rules, sticky groups and templated export.",
   "config": {
     "addonName": "Annotation Compositor",

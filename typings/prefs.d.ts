@@ -11,7 +11,7 @@ declare namespace _ZoteroTypes {
       "tagType": number;
       "navigateOnClick": boolean;
       "persistStickyGroup": boolean;
-      "stickyGroups": string;
+      "stickyGroupsByItem": string;
       "libraryColorRules": string;
       "itemColorRules": string;
       "templateId": string;

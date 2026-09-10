@@ -162,40 +162,80 @@ export class ReaderSelectionWatcher {
   }
 }
 
-/** Sticky-group state, keyed by reader tab id. */
+/**
+ * Sticky-group state, keyed by the key of the top-level item that owns the
+ * folder.
+ *
+ * Keyed by ITEM rather than by reader tab id, because a folder path only means
+ * anything inside the item whose annotation tags define it. Zotero hands out
+ * tab ids per session and recycles them, so a tab-keyed pin did two wrong
+ * things at once: it was lost the moment the item was closed and reopened (or
+ * Zotero restarted), and it re-attached itself to whatever unrelated item
+ * happened to inherit the id — which is how one item's folder ended up
+ * auto-filing another item's new annotations.
+ *
+ * `onChange` is called after every mutation so the caller can persist the map
+ * immediately; waiting for shutdown loses the pin whenever Zotero does not exit
+ * cleanly.
+ */
 export class StickyGroupRegistry {
-  private readonly byTab = new Map<string, FolderPath>();
+  private readonly byItem = new Map<string, FolderPath>();
 
-  constructor(persisted: Readonly<Record<string, FolderPath>> = {}) {
-    for (const [tabID, path] of Object.entries(persisted)) {
-      this.byTab.set(tabID, path);
+  constructor(
+    persisted: Readonly<Record<string, FolderPath>> = {},
+    private readonly onChange: (groups: Record<string, FolderPath>) => void = () => {},
+  ) {
+    this.adopt(persisted);
+  }
+
+  /** Load a persisted map, ignoring anything that is not a real folder path. */
+  adopt(persisted: Readonly<Record<string, FolderPath>>): void {
+    for (const [itemKey, path] of Object.entries(persisted)) {
+      if (
+        typeof itemKey === "string" &&
+        itemKey.length > 0 &&
+        Array.isArray(path) &&
+        path.length > 0 &&
+        path.every((segment) => typeof segment === "string")
+      ) {
+        this.byItem.set(itemKey, [...path]);
+      }
     }
   }
 
-  get(tabID: string): FolderPath | null {
-    return this.byTab.get(tabID) ?? null;
+  get(itemKey: string): FolderPath | null {
+    return this.byItem.get(itemKey) ?? null;
   }
 
-  set(tabID: string, path: FolderPath | null): void {
-    if (path === null) {
-      this.byTab.delete(tabID);
+  set(itemKey: string, path: FolderPath | null): void {
+    if (path === null || path.length === 0) {
+      this.byItem.delete(itemKey);
     } else {
-      this.byTab.set(tabID, [...path]);
+      this.byItem.set(itemKey, [...path]);
     }
+    this.onChange(this.toJSON());
   }
 
-  /** Sticky group of the foreground tab, or `null`. */
-  active(): FolderPath | null {
-    const tabs = Zotero.getMainWindow()?.Zotero_Tabs;
-    const tabID = typeof tabs?.selectedID === "string" ? tabs.selectedID : null;
-    return tabID === null ? null : this.get(tabID);
+  /**
+   * Move a pin that names `source` (or something below it) onto `target`, so a
+   * renamed or reparented folder keeps its pin instead of silently losing it.
+   */
+  remap(itemKey: string, source: FolderPath, target: FolderPath): void {
+    const current = this.byItem.get(itemKey);
+    if (current === undefined || current.length < source.length) {
+      return;
+    }
+    if (!source.every((segment, index) => current[index] === segment)) {
+      return;
+    }
+    this.set(itemKey, [...target, ...current.slice(source.length)]);
   }
 
   toJSON(): Record<string, FolderPath> {
-    return Object.fromEntries(this.byTab);
+    return Object.fromEntries(this.byItem);
   }
 
   clear(): void {
-    this.byTab.clear();
+    this.byItem.clear();
   }
 }

@@ -134,9 +134,9 @@ export async function onStartup(rootURI: string): Promise<void> {
   settingsSync.pull();
   registerPrefObservers(settingsSync);
 
-  for (const [tabID, path] of Object.entries(getPersistedStickyGroups())) {
-    addon.sticky.set(tabID, path as FolderPath);
-  }
+  // adopt(), not set(): loading the stored map must not immediately write it
+  // back out again.
+  addon.sticky.adopt(getPersistedStickyGroups());
 
   addon.panel.register();
   addon.notifier.register();

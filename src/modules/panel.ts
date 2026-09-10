@@ -219,7 +219,11 @@ export class GroupsPanel {
         continue;
       }
       const state = this.state(item.key);
-      if (state.selection.size === 1 && state.selection.has(annotationKey)) {
+      // Already part of what is selected here — including a multi-annotation
+      // range the user just built with shift-click. Reducing that to the single
+      // annotation the reader happens to have focused would throw the
+      // selection away, so leave it alone.
+      if (state.selection.has(annotationKey)) {
         continue;
       }
       state.selection.clear();
@@ -276,11 +280,17 @@ export class GroupsPanel {
   /**
    * Move every UI-state key that names `source` (or something below it) onto
    * `target`. Called after a rename or reparent so collapse state, pending
-   * empty folders and the recents list follow the folder instead of being
-   * orphaned — an orphaned collapse key is why a renamed folder sprang open and
-   * why its twisty then stopped responding.
+   * empty folders, the recents list and the sticky pin follow the folder
+   * instead of being orphaned — an orphaned collapse key is why a renamed
+   * folder sprang open and why its twisty then stopped responding.
    */
-  private remapState(state: PanelState, source: FolderPath, target: FolderPath): void {
+  private remapState(
+    item: Zotero.Item,
+    state: PanelState,
+    source: FolderPath,
+    target: FolderPath,
+  ): void {
+    this.host.sticky.remap(item.key, source, target);
     state.collapsedKeys = new Set(remapKeys(state.collapsedKeys, source, target));
     state.pendingFolderKeys = new Set(remapKeys(state.pendingFolderKeys, source, target));
     state.recents = remapKeys(state.recents, source, target);
@@ -541,13 +551,13 @@ export class GroupsPanel {
     name.textContent = folder.name;
     row.append(name);
 
-    // The sticky folder is where new annotations in this reader tab land, so it
-    // is worth marking rather than leaving to memory.
-    if (pathKey(this.host.sticky.active() ?? []) === folder.key) {
+    // The sticky folder is where this item's new annotations land, so it is
+    // worth marking rather than leaving to memory.
+    if (pathKey(this.host.sticky.get(item.key) ?? []) === folder.key) {
       const pin = doc.createElement("span");
       pin.className = "ac-sticky";
       pin.textContent = "📌";
-      pin.title = "New annotations in this tab are filed here";
+      pin.title = "New annotations on this item are filed here";
       row.append(pin);
     }
 
@@ -724,6 +734,12 @@ export class GroupsPanel {
       this.refreshSelection(item, state);
       if (!range && !toggle && getNavigateOnClick()) {
         this.scheduleNavigate(item, annotation.id);
+      } else {
+        // A navigate scheduled by the FIRST (unmodified) click is still
+        // pending here. Letting it fire moved the reader to that one
+        // annotation, and the reader-selection watcher then collapsed the range
+        // straight back to it — the range flashed and vanished.
+        this.cancelNavigate();
       }
     });
     row.addEventListener("dblclick", () => {
@@ -998,7 +1014,7 @@ export class GroupsPanel {
       this.report(outcome);
       return;
     }
-    this.remapState(state, source, target);
+    this.remapState(item, state, source, target);
     this.refresh();
   }
 
@@ -1009,7 +1025,7 @@ export class GroupsPanel {
     state: PanelState,
     folder: FolderNode,
   ): void {
-    const isSticky = pathKey(this.host.sticky.active() ?? []) === folder.key;
+    const isSticky = pathKey(this.host.sticky.get(item.key) ?? []) === folder.key;
     // Every folder except this one and its own descendants is a legal new
     // parent; "Top level" un-nests. This is the menu-driven twin of dragging a
     // folder onto another folder.
@@ -1041,17 +1057,14 @@ export class GroupsPanel {
       },
       {
         label: isSticky ? "Unpin sticky group" : "Pin as sticky group",
-        onCommand: () => this.setSticky(isSticky ? null : folder.path),
+        onCommand: () => this.setSticky(item, isSticky ? null : folder.path),
       },
     ]);
   }
 
-  private setSticky(path: FolderPath | null): void {
-    const tabs = Zotero.getMainWindow()?.Zotero_Tabs;
-    if (typeof tabs?.selectedID === "string") {
-      this.host.sticky.set(tabs.selectedID, path);
-      this.refresh();
-    }
+  private setSticky(item: Zotero.Item, path: FolderPath | null): void {
+    this.host.sticky.set(item.key, path);
+    this.refresh();
   }
 
   /**
@@ -1068,7 +1081,7 @@ export class GroupsPanel {
       "New folder",
       "Folder name:",
       "",
-      "Pin as this tab's sticky folder",
+      "Pin as this item's sticky folder",
       getStickyOnCreate(),
     );
     if (answer === null) {
@@ -1082,7 +1095,7 @@ export class GroupsPanel {
     const path = [...parent, check.value];
     const key = pathKey(path);
     if (answer.checked) {
-      this.setSticky(path);
+      this.setSticky(item, path);
     }
     if (assignIds.length > 0) {
       await this.assignToFolder(item, state, assignIds, path);
@@ -1121,7 +1134,7 @@ export class GroupsPanel {
     }
     // Carry collapse state onto the new key, so a collapsed folder stays
     // collapsed instead of springing open under its new name.
-    this.remapState(state, path, target);
+    this.remapState(item, state, path, target);
     this.refresh();
   }
 

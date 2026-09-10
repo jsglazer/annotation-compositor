@@ -38,7 +38,6 @@ export async function assignNewAnnotations(
   }
   const prefix = getTagPrefix();
   const libraryRules = getLibraryColorRules();
-  const stickyPath = sticky.active();
 
   // Group by parent item so each item gets exactly one transaction.
   const byParent = new Map<string, { item: Zotero.Item; annotations: Zotero.Item[] }>();
@@ -57,6 +56,10 @@ export async function assignNewAnnotations(
 
   for (const { item, annotations: created } of byParent.values()) {
     const itemRules = getItemColorRules(item.key);
+    // The pin belongs to this item, so it can only ever file this item's own
+    // new annotations — never annotations that happen to be created while some
+    // other pinned item is on screen.
+    const stickyPath = sticky.get(item.key);
     const diff: TagDiffEntry[] = [];
     for (const annotation of created) {
       const record = toRecord(annotation);

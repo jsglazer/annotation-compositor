@@ -49,11 +49,11 @@ The path separator `/` is reserved, so a folder name may not contain it. Names a
 | Preference                                              | Default                      | What it does                                                                          |
 | ------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
 | `tagPrefix`                                             | `grp`                        | Namespace for group tags. Changing it runs a confirm-gated, snapshot-backed migration |
-| `tagType`                                               | `1` (automatic)               | Manual or automatic tags for group membership                                         |
+| `tagType`                                               | `1` (automatic)              | Manual or automatic tags for group membership                                         |
 | `navigateOnClick`                                       | `true`                       | Clicking an annotation row scrolls the reader to it                                   |
 | `persistStickyGroup`                                    | `false`                      | Remember sticky groups across sessions                                                |
 | `stickyOnCreate`                                        | `false`                      | Pre-tick "pin as sticky folder" in the new-folder dialog                              |
-| `pinGroupsPanel`                                        | `true`                       | Pin the Groups panel as the item pane's default view on every Zotero startup           |
+| `pinGroupsPanel`                                        | `true`                       | Pin the Groups panel as the item pane's default view on every Zotero startup          |
 | `syncSettings`                                          | `true`                       | Mirror these settings through Zotero sync so they follow your account                 |
 | `useCustomSelectionColor` / `selectionColor`            | `false` / `#2ea8e5`          | Override the selected-row background with a custom highlight color                    |
 | `templateId` / `includeSubfolders` / `includeUngrouped` | `markdown` / `true` / `true` | Export defaults                                                                       |

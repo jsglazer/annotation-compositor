@@ -13,7 +13,10 @@ export const PREF_KEYS = {
   tagType: `${BRANCH}.tagType`,
   navigateOnClick: `${BRANCH}.navigateOnClick`,
   persistStickyGroup: `${BRANCH}.persistStickyGroup`,
-  stickyGroups: `${BRANCH}.stickyGroups`,
+  // Keyed by item key. The old `stickyGroups` pref was keyed by reader tab id;
+  // a fresh key retires that data rather than re-importing pins that point at
+  // recycled tab ids.
+  stickyGroups: `${BRANCH}.stickyGroupsByItem`,
   libraryColorRules: `${BRANCH}.libraryColorRules`,
   itemColorRules: `${BRANCH}.itemColorRules`,
   templateId: `${BRANCH}.templateId`,
@@ -30,8 +33,8 @@ export const PREF_KEYS = {
 /**
  * The prefs that travel between machines via Zotero's synced settings.
  *
- * Deliberately excluded: `stickyGroups` (keyed by reader tab id, meaningless on
- * another machine) and `warningAcknowledged` (a per-install first-run notice).
+ * Deliberately excluded: `stickyGroups` (a local working state, not a setting)
+ * and `warningAcknowledged` (a per-install first-run notice).
  */
 export const SYNCED_PREF_KEYS = [
   PREF_KEYS.tagPrefix,
@@ -99,7 +102,7 @@ export function getNavigateOnClick(): boolean {
 }
 
 export function getPersistStickyGroup(): boolean {
-  return readBool(PREF_KEYS.persistStickyGroup, false);
+  return readBool(PREF_KEYS.persistStickyGroup, true);
 }
 
 export function getLibraryColorRules(): ColorRule[] {
@@ -127,7 +130,7 @@ export function setItemColorRules(itemKey: string, rules: readonly ColorRule[]):
   Zotero.Prefs.set(PREF_KEYS.itemColorRules, JSON.stringify(all), true);
 }
 
-/** Sticky group per reader tab, persisted only when the pref says so. */
+/** Sticky folder per item key, persisted only when the pref says so. */
 export function getPersistedStickyGroups(): Record<string, FolderPath> {
   return getPersistStickyGroup()
     ? readJSON<Record<string, FolderPath>>(PREF_KEYS.stickyGroups, {})

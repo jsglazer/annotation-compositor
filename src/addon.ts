@@ -9,6 +9,7 @@ import { CompositorToolkit } from "./adapters/toolkit.js";
 import { ExportService } from "./modules/exportService.js";
 import { GroupService } from "./modules/groupService.js";
 import { NotifierService } from "./modules/notifier.js";
+import { setPersistedStickyGroups } from "./modules/prefs.js";
 import { GroupsPanel } from "./modules/panel.js";
 import { RestoreService } from "./modules/restoreService.js";
 import { SnapshotStore } from "./modules/snapshotStore.js";
@@ -22,7 +23,11 @@ export default class Addon {
 
   readonly toolkit = new CompositorToolkit();
   readonly guard = new NotifierLoopGuard({ now: () => Date.now() });
-  readonly sticky = new StickyGroupRegistry();
+  // Persisted on every change, not only at shutdown: an unclean exit used to
+  // drop whatever the user had pinned during the session.
+  readonly sticky = new StickyGroupRegistry({}, (groups) =>
+    setPersistedStickyGroups(groups),
+  );
   readonly snapshots = new SnapshotStore();
   readonly service: GroupService;
   readonly exports: ExportService;
