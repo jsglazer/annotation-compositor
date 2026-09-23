@@ -96,12 +96,16 @@ function buildAddon(): Addon {
  * preferences pane still produces a single write.
  */
 function registerPrefObservers(sync: SettingsSync): void {
-  const watched = [...SYNCED_PREF_KEYS, PREF_KEYS.syncSettings];
-  for (const key of watched) {
+  const watched: [string, () => void][] = [
+    ...SYNCED_PREF_KEYS.map((key): [string, () => void] => [
+      key,
+      () => sync.schedulePush(),
+    ]),
+    [PREF_KEYS.syncSettings, () => void sync.onToggle()],
+  ];
+  for (const [key, onChange] of watched) {
     try {
-      prefObservers.push(
-        Zotero.Prefs.registerObserver(key, () => sync.schedulePush(), true) as symbol,
-      );
+      prefObservers.push(Zotero.Prefs.registerObserver(key, onChange, true) as symbol);
     } catch {
       // A pref that cannot be observed simply syncs on the next shutdown flush.
     }
@@ -131,7 +135,7 @@ export async function onStartup(rootURI: string): Promise<void> {
   // Adopt any settings synced from another machine BEFORE anything reads a
   // pref, so the first render already uses them.
   settingsSync = new SettingsSync();
-  settingsSync.pull();
+  await settingsSync.start();
   registerPrefObservers(settingsSync);
 
   // adopt(), not set(): loading the stored map must not immediately write it
