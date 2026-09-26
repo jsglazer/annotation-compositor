@@ -14,8 +14,8 @@ import { confirm, select } from "../adapters/dialogs.js";
 import { getCitationKey } from "../adapters/citation.js";
 import { getCustomColorLabels } from "../adapters/colorLabels.js";
 import type { GroupService } from "./groupService.js";
+import { groupPaths } from "../core/path.js";
 import {
-  getIncludeSubfolders,
   getTagPrefix,
   getTemplateId,
   setIncludeSubfolders,
@@ -58,10 +58,24 @@ export class ExportService {
     return renderTemplate(preset.template, context, { partials: preset.partials });
   }
 
-  /** Full interactive export flow. */
-  async run(item: Zotero.Item, selectedPaths: readonly FolderPath[]): Promise<void> {
-    if (selectedPaths.length === 0) {
-      ztoolkit.notify("Annotation Compositor", "No folders to export.", false);
+  /**
+   * Full interactive export flow. With `all`, every folder (subfolders nested)
+   * plus the Ungrouped bucket is exported without asking which to include.
+   */
+  async run(
+    item: Zotero.Item,
+    selectedPaths: readonly FolderPath[],
+    options: { all?: boolean } = {},
+  ): Promise<void> {
+    const records = this.service.load(item).records;
+    const hasUngrouped = records.some(
+      (record) => groupPaths(record.tags, getTagPrefix()).length === 0,
+    );
+    // An item whose annotations are all still Ungrouped has no folders, which
+    // used to stop the export with "No folders to export" even though there
+    // was plenty to export.
+    if (selectedPaths.length === 0 && !hasUngrouped) {
+      ztoolkit.notify("Annotation Compositor", "Nothing to export.", false);
       return;
     }
     const presetIndex = select(
@@ -75,18 +89,27 @@ export class ExportService {
     const preset = TEMPLATE_PRESETS[presetIndex] ?? findPreset(getTemplateId());
     setTemplateId(preset.id);
 
-    const includeSubfolders = confirm(
-      "Export annotations",
-      "Include subfolders of the selected folders?",
-    );
-    setIncludeSubfolders(includeSubfolders);
-    void getIncludeSubfolders();
-
-    const includeUngrouped = confirm(
-      "Export annotations",
-      "Include ungrouped annotations?",
-    );
-    setIncludeUngrouped(includeUngrouped);
+    // Questions that cannot change the result are not asked: there are no
+    // subfolders to include when nothing but Ungrouped is being exported, and
+    // Ungrouped is the whole export when there are no folders at all.
+    let includeSubfolders = true;
+    let includeUngrouped = hasUngrouped;
+    if (options.all !== true) {
+      if (selectedPaths.length > 0) {
+        includeSubfolders = confirm(
+          "Export annotations",
+          "Include subfolders of the selected folders?",
+        );
+        setIncludeSubfolders(includeSubfolders);
+        if (hasUngrouped) {
+          includeUngrouped = confirm(
+            "Export annotations",
+            "Include ungrouped annotations?",
+          );
+          setIncludeUngrouped(includeUngrouped);
+        }
+      }
+    }
 
     let output: string;
     try {
@@ -98,10 +121,15 @@ export class ExportService {
         includeUngrouped,
       );
     } catch (error) {
+      // Anything but a template syntax error is a bug; say what it was instead
+      // of a generic line, and leave the stack in the error console.
+      if (!(error instanceof TemplateError)) {
+        Zotero.logError(error as Error);
+      }
       const message =
         error instanceof TemplateError
           ? error.message
-          : "The template could not be rendered.";
+          : `The export failed: ${error instanceof Error ? error.message : String(error)}`;
       ztoolkit.notify("Annotation Compositor", message, false);
       return;
     }

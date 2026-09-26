@@ -45,7 +45,7 @@ function buildAddon(): Addon {
     const panel = new GroupsPanel({
       service: self.service,
       sticky: self.sticky,
-      exportItem: (item, paths) => self.exports.run(item, paths),
+      exportItem: (item, paths, options) => self.exports.run(item, paths, options),
       restoreItem: async (item) => {
         if (await self.restores.run(item)) {
           panel.refresh();

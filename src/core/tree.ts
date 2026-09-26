@@ -3,6 +3,7 @@
  * Pure: no globals, no I/O, no DOM. Input arrays are never mutated.
  */
 import { comparePaths, groupPaths, keyToPath, pathKey, validatePath } from "./path.js";
+import { normalizeColorHex } from "./colorNames.js";
 import { sortIdsBySortIndex } from "./sort.js";
 import type {
   AnnotationRecord,
@@ -139,6 +140,7 @@ export function buildViewModel(
   const needle = (uiState.filter ?? "").trim().toLowerCase();
   const collapsed = new Set(uiState.collapsedKeys ?? []);
   const types = new Set((uiState.types ?? []).map((type) => type.toLowerCase()));
+  const colors = new Set((uiState.colors ?? []).map(normalizeColorHex));
 
   const roots = new Map<string, MutableNode>();
   const byId: Record<string, AnnotationRecord> = {};
@@ -147,6 +149,9 @@ export function buildViewModel(
 
   for (const annotation of annotations) {
     if (types.size > 0 && !types.has(annotation.type.toLowerCase())) {
+      continue;
+    }
+    if (colors.size > 0 && !colors.has(normalizeColorHex(annotation.color))) {
       continue;
     }
     const paths = groupPaths(annotation.tags, tagPrefix);

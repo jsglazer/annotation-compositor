@@ -19,11 +19,33 @@ const REQUEST_TIMEOUT_MS = 1_500;
 
 let cache: { labels: Record<string, string>; fetchedAt: number } | null = null;
 
+/**
+ * `AbortController` is NOT one of the globals Zotero hands the plugin sandbox
+ * (its `wantGlobalProperties` list stops at fetch/URL/TextEncoder and friends),
+ * so a bare `new AbortController()` threw a ReferenceError here — outside the
+ * try, which failed every export and every double-click copy. Borrow the main
+ * window's constructor instead, and go without a timeout if there is none.
+ */
+function makeAbortController(): AbortController | null {
+  const win = Zotero.getMainWindow() as unknown as {
+    AbortController?: typeof AbortController;
+  } | null;
+  const Controller: typeof AbortController | undefined =
+    typeof AbortController === "function" ? AbortController : win?.AbortController;
+  return typeof Controller === "function" ? new Controller() : null;
+}
+
 async function fetchLabels(): Promise<Record<string, string>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const response = await fetch(ENDPOINT, { signal: controller.signal });
+    const controller = makeAbortController();
+    if (controller !== null) {
+      timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    }
+    const response = await fetch(
+      ENDPOINT,
+      controller === null ? {} : { signal: controller.signal },
+    );
     if (!response.ok) {
       ztoolkit.log("annotation-compositor: color-labels request failed", response.status);
       return {};
@@ -47,7 +69,9 @@ async function fetchLabels(): Promise<Record<string, string>> {
     ztoolkit.log("annotation-compositor: color-labels fetch error", error);
     return {};
   } finally {
-    clearTimeout(timer);
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
   }
 }
 

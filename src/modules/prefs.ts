@@ -12,6 +12,7 @@ export const PREF_KEYS = {
   tagPrefix: `${BRANCH}.tagPrefix`,
   tagType: `${BRANCH}.tagType`,
   navigateOnClick: `${BRANCH}.navigateOnClick`,
+  arrowKeysScroll: `${BRANCH}.arrowKeysScroll`,
   persistStickyGroup: `${BRANCH}.persistStickyGroup`,
   // Keyed by item key. The old `stickyGroups` pref was keyed by reader tab id;
   // a fresh key retires that data rather than re-importing pins that point at
@@ -40,6 +41,7 @@ export const SYNCED_PREF_KEYS = [
   PREF_KEYS.tagPrefix,
   PREF_KEYS.tagType,
   PREF_KEYS.navigateOnClick,
+  PREF_KEYS.arrowKeysScroll,
   PREF_KEYS.persistStickyGroup,
   PREF_KEYS.libraryColorRules,
   PREF_KEYS.itemColorRules,
@@ -99,6 +101,11 @@ export function setTagType(tagType: TagType): void {
 
 export function getNavigateOnClick(): boolean {
   return readBool(PREF_KEYS.navigateOnClick, true);
+}
+
+/** Whether Up/Down scroll the panel (true) or move the selection (false, the default). */
+export function getArrowKeysScroll(): boolean {
+  return readBool(PREF_KEYS.arrowKeysScroll, false);
 }
 
 export function getPersistStickyGroup(): boolean {

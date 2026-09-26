@@ -26,7 +26,7 @@ import {
   reparentFolder,
   unassignAnnotations,
 } from "../core/rewrite.js";
-import { ANNOTATION_TYPES, TAG_TYPE_AUTOMATIC } from "../core/types.js";
+import { ANNOTATION_TYPES } from "../core/types.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
 import { resolveColorLabel } from "../core/colorNames.js";
 import { confirm, promptText, promptTextChecked } from "../adapters/dialogs.js";
@@ -36,6 +36,7 @@ import { openAndNavigate } from "../adapters/reader.js";
 import type { StickyGroupRegistry } from "../adapters/reader.js";
 import type { GroupService } from "./groupService.js";
 import {
+  getArrowKeysScroll,
   getNavigateOnClick,
   getSelectionColor,
   getStickyOnCreate,
@@ -56,6 +57,19 @@ const UNGROUPED_KEY = "/ungrouped";
 
 /** How long a single click waits to see whether it is really a double click. */
 const DOUBLE_CLICK_MS = 260;
+
+/**
+ * Colour filter buttons, in toolbar order. Hexes are Zotero's built-in
+ * annotation colours (see `core/colorNames.ts`).
+ */
+const COLOR_FILTERS: readonly { readonly label: string; readonly hex: string }[] = [
+  { label: "Yellow", hex: "ffd400" },
+  { label: "Red", hex: "ff6666" },
+  { label: "Blue", hex: "2ea8e5" },
+];
+
+/** How long after a jump to wait before taking focus back from the reader. */
+const REFOCUS_MS = 120;
 
 /** One-character type marks, so highlight and underline are told apart at a glance. */
 const TYPE_MARKS: Readonly<Record<string, string>> = {
@@ -80,6 +94,8 @@ interface PanelState {
   visibleOrder: string[];
   /** Shift-click range anchor: the last annotation clicked without a modifier. */
   lastClickedId: string | null;
+  /** The row the arrow keys move from: the last annotation clicked or stepped to. */
+  cursorId: string | null;
   /** False until the first render has collapsed this item's folders. */
   seeded: boolean;
 }
@@ -99,8 +115,12 @@ interface LiveBody {
 export interface PanelHost {
   readonly service: GroupService;
   readonly sticky: StickyGroupRegistry;
-  /** Opens the export dialog for the given item. */
-  exportItem(item: Zotero.Item, selectedPaths: FolderPath[]): Promise<void>;
+  /** Opens the export dialog for the given item; `all` exports everything unasked. */
+  exportItem(
+    item: Zotero.Item,
+    selectedPaths: FolderPath[],
+    options?: { all?: boolean },
+  ): Promise<void>;
   /** Opens the snapshot restore dialog. */
   restoreItem(item: Zotero.Item): Promise<void>;
 }
@@ -112,6 +132,15 @@ export class GroupsPanel {
   private bodies: LiveBody[] = [];
   /** Pending single-click navigation, cancelled when a double click arrives. */
   private clickTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pending hand-back of focus to the panel after a jump into the reader. */
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Colour filter (bare lowercase hexes). Deliberately NOT per item: it holds
+   * across every folder and every item until the user clears it with ×.
+   */
+  private colorFilter = new Set<string>();
+  /** Bodies that already carry the keyboard listener. */
+  private readonly keyedBodies = new WeakSet<HTMLElement>();
 
   constructor(private readonly host: PanelHost) {}
 
@@ -149,13 +178,26 @@ export class GroupsPanel {
         l10nID: "annotationcompositor-section-header",
         icon: "chrome://annotationcompositor/content/icons/icon-20.svg",
       },
+      // Zotero calls these from inside the loop that hands every item-pane
+      // section its item and its editable/read-only state, with no try/catch
+      // of its own. A throw here aborted that loop, so every section after
+      // ours kept a stale state — a Tags or Related box left read-only hides
+      // its "+" button until something re-renders it. Never let one escape.
       onRender: ({ body, item }) => {
-        this.trackBody(body, item);
-        this.injectStylesheet(body.ownerDocument);
-        this.render(body, item);
+        try {
+          this.trackBody(body, item);
+          this.injectStylesheet(body.ownerDocument);
+          this.render(body, item);
+        } catch (error) {
+          Zotero.logError(error as Error);
+        }
       },
       onItemChange: ({ item, setEnabled }) => {
-        setEnabled(item.isRegularItem() || item.isAttachment());
+        try {
+          setEnabled(item.isRegularItem() || item.isAttachment());
+        } catch (error) {
+          Zotero.logError(error as Error);
+        }
       },
     });
   }
@@ -169,6 +211,11 @@ export class GroupsPanel {
       clearTimeout(this.clickTimer);
       this.clickTimer = null;
     }
+    if (this.focusTimer !== null) {
+      clearTimeout(this.focusTimer);
+      this.focusTimer = null;
+    }
+    this.colorFilter.clear();
     this.stateByItem.clear();
     this.bodies = [];
   }
@@ -186,6 +233,111 @@ export class GroupsPanel {
       this.bodies.push({ body, item });
     } else {
       existing.item = item;
+    }
+    // The body element survives every re-render (only its children are
+    // swapped), so it is the one place a keyboard listener can live. Being
+    // focusable is also what lets a click on a row leave focus in the panel.
+    if (!this.keyedBodies.has(body)) {
+      this.keyedBodies.add(body);
+      body.tabIndex = 0;
+      body.classList.add("ac-body");
+      body.addEventListener("keydown", (event) => this.handleKeyDown(body, event));
+    }
+  }
+
+  /** Whether `body` is actually on screen (not in a background tab or collapsed). */
+  private isVisible(body: HTMLElement): boolean {
+    if (!body.isConnected) {
+      return false;
+    }
+    const check = (body as unknown as { checkVisibility?: () => boolean })
+      .checkVisibility;
+    return typeof check === "function"
+      ? check.call(body)
+      : body.getClientRects().length > 0;
+  }
+
+  /** Move keyboard focus into the on-screen panel showing `item`, if any. */
+  private focusPanel(item: Zotero.Item): void {
+    const body = this.bodiesFor(item).find((candidate) => this.isVisible(candidate));
+    body?.focus({ preventScroll: true });
+  }
+
+  /**
+   * Take focus back after a jump into the reader: selecting the reader tab and
+   * navigating hand focus to the reader asynchronously, which left the arrow
+   * keys scrolling the PDF instead of stepping through the panel.
+   */
+  private refocusSoon(item: Zotero.Item): void {
+    if (this.focusTimer !== null) {
+      clearTimeout(this.focusTimer);
+    }
+    this.focusTimer = setTimeout(() => {
+      this.focusTimer = null;
+      this.focusPanel(item);
+    }, REFOCUS_MS);
+  }
+
+  /**
+   * Up/Down step to the previous/next visible annotation (Shift extends the
+   * range), jumping the reader there exactly as a click does. With the
+   * "arrow keys scroll" preference on, the keys are left alone.
+   */
+  private handleKeyDown(body: HTMLElement, event: KeyboardEvent): void {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    if (getArrowKeysScroll() || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    const target = event.target as Element | null;
+    if (target?.closest?.("input, select, textarea") != null) {
+      return; // the filter box and type menu keep their own arrow behaviour
+    }
+    const entry = this.bodies.find((candidate) => candidate.body === body);
+    if (entry === undefined) {
+      return;
+    }
+    const { item } = entry;
+    const state = this.state(item.key);
+    const order = state.visibleOrder;
+    if (order.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    const current = state.cursorId ?? state.lastClickedId;
+    const index = current === null ? -1 : order.indexOf(current);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      index === -1
+        ? step === 1
+          ? 0
+          : order.length - 1
+        : Math.min(order.length - 1, Math.max(0, index + step));
+    const id = order[nextIndex];
+
+    if (event.shiftKey) {
+      if (state.lastClickedId === null) {
+        state.lastClickedId = current ?? id;
+      }
+      this.extendSelection(state, id);
+    } else {
+      state.selection.clear();
+      state.selection.add(id);
+      state.lastClickedId = id;
+    }
+    state.cursorId = id;
+    this.refreshSelection(item, state);
+    body
+      .querySelector<HTMLElement>(`.ac-annotation[data-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+    if (event.shiftKey) {
+      this.cancelNavigate();
+    } else if (getNavigateOnClick()) {
+      // Debounced like a click, so holding the key down jumps once at the end.
+      this.scheduleNavigate(item, id);
     }
   }
 
@@ -231,12 +383,18 @@ export class GroupsPanel {
       state.selection.clear();
       state.selection.add(annotationKey);
       state.lastClickedId = annotationKey;
+      state.cursorId = annotationKey;
       this.applySelection(body, state);
       body
         .querySelector<HTMLElement>(
           `.ac-annotation[data-id="${CSS.escape(annotationKey)}"]`,
         )
         ?.scrollIntoView({ block: "nearest" });
+      // A highlight clicked in the PDF hands the keyboard to the panel, so the
+      // arrow keys carry on from that annotation.
+      if (this.isVisible(body)) {
+        body.focus({ preventScroll: true });
+      }
     }
   }
 
@@ -264,6 +422,7 @@ export class GroupsPanel {
         recents: [],
         visibleOrder: [],
         lastClickedId: null,
+        cursorId: null,
         seeded: false,
       };
       this.stateByItem.set(itemKey, state);
@@ -277,6 +436,7 @@ export class GroupsPanel {
       pendingFolderKeys: [...state.pendingFolderKeys],
       filter: state.filter,
       types: [...state.types],
+      colors: [...this.colorFilter],
     };
   }
 
@@ -479,11 +639,13 @@ export class GroupsPanel {
       button("⤓", "Export selected folders", () => {
         void this.host.exportItem(item, this.selectedFolderPaths(state, records));
       }),
+      button("⇊", "Export all folders and ungrouped annotations", () => {
+        void this.host.exportItem(item, collectExistingPaths(records, getTagPrefix()), {
+          all: true,
+        });
+      }),
       button("⟲", "Restore previous grouping", () => {
         void this.host.restoreItem(item);
-      }),
-      button("⇌", "Convert this item's group tags to Automatic", () => {
-        void this.convertToAutomatic(item);
       }),
     );
 
@@ -496,8 +658,46 @@ export class GroupsPanel {
       state.filter = filter.value;
       this.refresh();
     });
-    bar.append(filter, this.buildTypeFilter(doc, state));
+    bar.append(filter, this.buildTypeFilter(doc, state), this.buildColorFilter(doc));
     return bar;
+  }
+
+  /**
+   * Colour toggles. Each one is independent (any combination can be on), and
+   * × clears them all. The filter is panel-wide, so it holds while moving
+   * between items until it is cleared.
+   */
+  private buildColorFilter(doc: Document): HTMLElement {
+    const group = doc.createElement("span");
+    group.className = "ac-colorfilter";
+    for (const { label, hex } of COLOR_FILTERS) {
+      const active = this.colorFilter.has(hex);
+      const element = doc.createElement("button");
+      element.className = active ? "ac-colorbutton ac-active" : "ac-colorbutton";
+      element.style.setProperty("--ac-color", `#${hex}`);
+      element.title = active ? `Stop showing only ${label}` : `Show ${label}`;
+      element.setAttribute("aria-pressed", String(active));
+      element.addEventListener("click", () => {
+        if (this.colorFilter.has(hex)) {
+          this.colorFilter.delete(hex);
+        } else {
+          this.colorFilter.add(hex);
+        }
+        this.refresh();
+      });
+      group.append(element);
+    }
+    const clear = doc.createElement("button");
+    clear.className = "ac-button ac-colorclear";
+    clear.textContent = "×";
+    clear.title = "Show all colors";
+    clear.disabled = this.colorFilter.size === 0;
+    clear.addEventListener("click", () => {
+      this.colorFilter.clear();
+      this.refresh();
+    });
+    group.append(clear);
+    return group;
   }
 
   /**
@@ -744,6 +944,7 @@ export class GroupsPanel {
         state.selection.add(annotation.id);
         state.lastClickedId = annotation.id;
       }
+      state.cursorId = annotation.id;
       // Selection only — repainting classes keeps this row alive so the second
       // half of a double click still lands on it.
       this.refreshSelection(item, state);
@@ -874,7 +1075,9 @@ export class GroupsPanel {
     }
     if (!(await openAndNavigate(annotation))) {
       this.error("Could not open the annotation in a reader.");
+      return;
     }
+    this.refocusSoon(item);
   }
 
   private startDrag(event: DragEvent, payload: DragPayload): void {
@@ -1177,25 +1380,6 @@ export class GroupsPanel {
     const outcome = await this.host.service.mutate(item, "pre-delete", (records, p) =>
       deleteFolder(records, p, path),
     );
-    this.report(outcome);
-    this.refresh();
-  }
-
-  /**
-   * Rewrite every existing group tag on `item` from Manual to Automatic.
-   * Snapshot-backed like every other write, so "Restore previous grouping"
-   * can undo it.
-   */
-  private async convertToAutomatic(item: Zotero.Item): Promise<void> {
-    if (
-      !confirm(
-        "Convert to Automatic",
-        'Convert this item\'s existing group tags from Manual to Automatic? A snapshot is taken first, and "Restore previous grouping" can undo it.',
-      )
-    ) {
-      return;
-    }
-    const outcome = await this.host.service.rewriteTagType(item, TAG_TYPE_AUTOMATIC);
     this.report(outcome);
     this.refresh();
   }

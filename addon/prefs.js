@@ -2,6 +2,7 @@
 pref("__prefsPrefix__.tagPrefix", "grp");
 pref("__prefsPrefix__.tagType", 1);
 pref("__prefsPrefix__.navigateOnClick", true);
+pref("__prefsPrefix__.arrowKeysScroll", false);
 pref("__prefsPrefix__.persistStickyGroup", true);
 pref("__prefsPrefix__.stickyGroupsByItem", "{}");
 pref("__prefsPrefix__.libraryColorRules", "[]");

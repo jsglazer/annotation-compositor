@@ -10,6 +10,7 @@ declare namespace _ZoteroTypes {
       "tagPrefix": string;
       "tagType": number;
       "navigateOnClick": boolean;
+      "arrowKeysScroll": boolean;
       "persistStickyGroup": boolean;
       "stickyGroupsByItem": string;
       "libraryColorRules": string;

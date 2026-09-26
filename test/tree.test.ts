@@ -126,3 +126,33 @@ describe("buildViewModel type filter", () => {
     expect(both.folders[0].annotationIds).toEqual(["h1"]);
   });
 });
+
+describe("buildViewModel color filter", () => {
+  const mixed = [
+    annotation("y1", ["grp/A"], { color: "#ffd400" }),
+    annotation("r1", ["grp/A", "grp/B"], { color: "#FF6666" }),
+    annotation("b1", [], { color: "#2ea8e5" }),
+    annotation("g1", ["grp/B"], { color: "#5fb236" }),
+  ];
+
+  it("keeps every colour when no colour filter is given", () => {
+    expect(buildViewModel(mixed, PREFIX, { colors: [] }).totalCount).toBe(4);
+  });
+
+  it("keeps only the requested colours, in every folder and in Ungrouped", () => {
+    const model = buildViewModel(mixed, PREFIX, { colors: ["ffd400", "#2EA8E5"] });
+    expect(model.totalCount).toBe(2);
+    expect(model.folders.map((folder) => folder.key)).toEqual(["A"]);
+    expect(model.folders[0].annotationIds).toEqual(["y1"]);
+    expect(model.ungrouped.map((a) => a.id)).toEqual(["b1"]);
+  });
+
+  it("matches colours case-insensitively and combines with the type filter", () => {
+    const model = buildViewModel(mixed, PREFIX, {
+      colors: ["#ff6666"],
+      types: ["highlight"],
+    });
+    expect(model.folders.map((folder) => folder.key)).toEqual(["A", "B"]);
+    expect(model.totalCount).toBe(1);
+  });
+});

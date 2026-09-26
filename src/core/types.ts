@@ -99,6 +99,11 @@ export interface UiState {
    * {@link AnnotationRecord.type}.
    */
   readonly types?: readonly string[];
+  /**
+   * Annotation colours to keep, as hex (any case, `#` optional). Empty or
+   * absent means every colour.
+   */
+  readonly colors?: readonly string[];
 }
 
 /** Annotation types Zotero can produce, in the order the UI offers them. */

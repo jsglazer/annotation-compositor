@@ -119,3 +119,41 @@
   opacity: 0.6;
   font-variant-numeric: tabular-nums;
 }
+
+/* The section body is focusable so the arrow keys can step through rows; the
+   selected row already shows where the keyboard is, so no focus ring. */
+.ac-body:focus {
+  outline: none;
+}
+
+/* Colour filter toggles: a swatch per colour, ringed when active. */
+.ac-colorfilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+.ac-colorbutton {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 1px solid var(--fill-tertiary, rgba(0, 0, 0, 0.3));
+  background-color: var(--ac-color);
+  opacity: 0.45;
+  appearance: none;
+}
+
+.ac-colorbutton.ac-active {
+  opacity: 1;
+  outline: 2px solid var(--color-accent, #2ea8e5);
+  outline-offset: 1px;
+}
+
+.ac-colorclear {
+  min-width: 18px;
+  padding: 0 4px;
+}

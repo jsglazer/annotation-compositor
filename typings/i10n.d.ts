@@ -7,6 +7,7 @@ export type FluentMessageId =
   | 'expand-all'
   | 'export-selected'
   | 'new-folder'
+  | 'pref-arrow-keys-scroll'
   | 'pref-include-subfolders'
   | 'pref-include-ungrouped'
   | 'pref-navigate-on-click'
