@@ -36,7 +36,7 @@ Group tags are **automatic (type 1)** tags by default, so they stay out of the t
 
 ## Installation
 
-**Requires Zotero 7 or later** (`strict_min_version` 7.0, `strict_max_version` 9.0.*).
+**Requires Zotero 7 or later** (`strict_min_version` 7.0, `strict_max_version` 10.*; Zotero 10 is supported from 1.0.11).
 
 1. Download `annotation-compositor.xpi` from the [releases page](https://github.com/jsglazer/annotation-compositor/releases)
 2. In Zotero: **Tools → Plugins → gear icon → Install Plugin From File**
