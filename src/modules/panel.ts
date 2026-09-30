@@ -71,6 +71,26 @@ const COLOR_FILTERS: readonly { readonly label: string; readonly hex: string }[]
 /** How long after a jump to wait before taking focus back from the reader. */
 const REFOCUS_MS = 120;
 
+/** How long the filter box waits after the last keystroke before filtering. */
+const FILTER_DELAY_MS = 1000;
+
+/**
+ * Zotero's own item-pane sections whose "+" button is hidden by CSS whenever
+ * the section carries `[readonly]` (`tags-box[readonly] .add{display:none}`).
+ */
+const ADD_BUTTON_SECTIONS = [
+  "tags-box",
+  "related-box",
+  "notes-box",
+  "libraries-collections-box",
+] as const;
+
+/** A built-in item-pane section, as far as the "+" self-heal needs to know it. */
+interface ZoteroSectionElement extends HTMLElement {
+  editable?: boolean;
+  _forceRenderAll?: () => unknown;
+}
+
 /** One-character type marks, so highlight and underline are told apart at a glance. */
 const TYPE_MARKS: Readonly<Record<string, string>> = {
   highlight: "▮",
@@ -84,7 +104,13 @@ const TYPE_MARKS: Readonly<Record<string, string>> = {
 interface PanelState {
   collapsedKeys: Set<string>;
   pendingFolderKeys: Set<string>;
+  /** The filter actually applied to the tree. */
   filter: string;
+  /**
+   * What the filter box shows. Runs ahead of `filter` while the typing delay
+   * is pending, so a notifier-driven refresh mid-word keeps the typed text.
+   */
+  filterDraft: string;
   /** Annotation types to show; empty means every type. */
   types: Set<string>;
   selection: Set<string>;
@@ -121,12 +147,19 @@ export interface PanelHost {
     selectedPaths: FolderPath[],
     options?: { all?: boolean },
   ): Promise<void>;
-  /** Opens the snapshot restore dialog. */
-  restoreItem(item: Zotero.Item): Promise<void>;
 }
 
 export class GroupsPanel {
+  /**
+   * The pane ID Zotero actually registered. Zotero namespaces it as
+   * `CSS.escape(pluginID + "-" + paneID)`, so the bare SECTION_ID is NOT the
+   * key — unregistering or pinning by SECTION_ID silently matched nothing.
+   */
   private sectionKey: string | false = false;
+  /** Pending filter-box application, restarted on every keystroke. */
+  private filterTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Whether the "+" self-heal has already reported itself this session. */
+  private healReported = false;
   private readonly stateByItem = new Map<string, PanelState>();
   /** Every body Zotero has rendered into, newest last. Pruned on each refresh. */
   private bodies: LiveBody[] = [];
@@ -163,6 +196,11 @@ export class GroupsPanel {
     return [...keys].sort().map(keyToPath);
   }
 
+  /** The registered pane ID (what Zotero's `pinnedPane` pref must hold), if any. */
+  get paneID(): string | null {
+    return this.sectionKey === false ? null : this.sectionKey;
+  }
+
   register(): void {
     if (this.sectionKey !== false) {
       return;
@@ -178,16 +216,14 @@ export class GroupsPanel {
         l10nID: "annotationcompositor-section-header",
         icon: "chrome://annotationcompositor/content/icons/icon-20.svg",
       },
-      // Zotero calls these from inside the loop that hands every item-pane
-      // section its item and its editable/read-only state, with no try/catch
-      // of its own. A throw here aborted that loop, so every section after
-      // ours kept a stale state — a Tags or Related box left read-only hides
-      // its "+" button until something re-renders it. Never let one escape.
-      onRender: ({ body, item }) => {
+      // Zotero already wraps plugin hooks in its own try/catch; this one only
+      // keeps our errors attributed to us in the error console.
+      onRender: ({ body, item, editable }) => {
         try {
           this.trackBody(body, item);
           this.injectStylesheet(body.ownerDocument);
           this.render(body, item);
+          this.healAddButtons(body, editable);
         } catch (error) {
           Zotero.logError(error as Error);
         }
@@ -200,16 +236,27 @@ export class GroupsPanel {
         }
       },
     });
+    if (this.sectionKey === false) {
+      Zotero.logError(
+        new Error(
+          "[annotation-compositor] Zotero refused to register the Groups section.",
+        ),
+      );
+    }
   }
 
   unregister(): void {
     if (this.sectionKey !== false) {
-      Zotero.ItemPaneManager.unregisterSection(SECTION_ID);
+      Zotero.ItemPaneManager.unregisterSection(this.sectionKey);
       this.sectionKey = false;
     }
     if (this.clickTimer !== null) {
       clearTimeout(this.clickTimer);
       this.clickTimer = null;
+    }
+    if (this.filterTimer !== null) {
+      clearTimeout(this.filterTimer);
+      this.filterTimer = null;
     }
     if (this.focusTimer !== null) {
       clearTimeout(this.focusTimer);
@@ -243,6 +290,53 @@ export class GroupsPanel {
       body.classList.add("ac-body");
       body.addEventListener("keydown", (event) => this.handleKeyDown(body, event));
     }
+  }
+
+  /**
+   * Zotero hides the "+" on Tags/Related/Notes/Libraries whenever that section
+   * carries `[readonly]`, and the only thing that should put it there is the
+   * pane's own editable flag — the same flag handed to us as `editable`. If a
+   * section is read-only while the pane that contains it is editable, it holds
+   * stale state: give it the pane's state back and log it, so the cause can be
+   * traced from Zotero's error console. Runs after Zotero's render loop, which
+   * sets every section's state synchronously around our own render.
+   */
+  private healAddButtons(body: HTMLElement, editable: boolean): void {
+    if (editable !== true) {
+      return;
+    }
+    setTimeout(() => {
+      try {
+        const details = body.closest("item-details");
+        if (details === null) {
+          return;
+        }
+        const healed: string[] = [];
+        for (const tag of ADD_BUTTON_SECTIONS) {
+          for (const section of Array.from(
+            details.querySelectorAll(tag),
+          ) as ZoteroSectionElement[]) {
+            if (!section.hasAttribute("readonly")) {
+              continue;
+            }
+            section.editable = true;
+            void section._forceRenderAll?.();
+            healed.push(tag);
+          }
+        }
+        if (healed.length === 0) {
+          return;
+        }
+        const message = `[annotation-compositor] editable pane had read-only sections (no "+"): ${healed.join(", ")} — restored`;
+        Zotero.debug(message);
+        if (!this.healReported) {
+          this.healReported = true;
+          Zotero.logError(new Error(message));
+        }
+      } catch (error) {
+        Zotero.logError(error as Error);
+      }
+    }, 0);
   }
 
   /** Whether `body` is actually on screen (not in a background tab or collapsed). */
@@ -417,6 +511,7 @@ export class GroupsPanel {
         collapsedKeys: new Set<string>(),
         pendingFolderKeys: new Set<string>(),
         filter: "",
+        filterDraft: "",
         types: new Set<string>(),
         selection: new Set<string>(),
         recents: [],
@@ -571,7 +666,24 @@ export class GroupsPanel {
     this.makeDropTarget(list, item, state, []);
     fragment.append(list);
 
+    // The swap destroys the filter box too, which is what dropped focus after
+    // every keystroke. Carry focus and caret over to the new box.
+    const active = doc.activeElement as HTMLInputElement | null;
+    const typing =
+      active?.classList?.contains("ac-filter") === true && body.contains(active)
+        ? { start: active.selectionStart, end: active.selectionEnd }
+        : null;
+
     body.replaceChildren(fragment);
+
+    if (typing !== null) {
+      const box = body.querySelector<HTMLInputElement>(".ac-filter");
+      if (box !== null) {
+        box.focus({ preventScroll: true });
+        const end = box.value.length;
+        box.setSelectionRange(typing.start ?? end, typing.end ?? end);
+      }
+    }
   }
 
   /**
@@ -644,22 +756,50 @@ export class GroupsPanel {
           all: true,
         });
       }),
-      button("⟲", "Restore previous grouping", () => {
-        void this.host.restoreItem(item);
-      }),
     );
+
+    // The filters get their own row: on one line with the buttons, the colour
+    // toggles (last in line, fixed width) were pushed past the pane's right
+    // edge and clipped out of sight.
+    const filters = doc.createElement("div");
+    filters.className = "ac-filterbar";
 
     const filter = doc.createElement("input");
     filter.className = "ac-filter";
     filter.setAttribute("type", "search");
     filter.setAttribute("placeholder", "Filter");
-    filter.value = state.filter;
+    filter.value = state.filterDraft;
     filter.addEventListener("input", () => {
-      state.filter = filter.value;
-      this.refresh();
+      state.filterDraft = filter.value;
+      // Clearing the box (including its own ✕) applies at once; typing waits
+      // until the user pauses.
+      this.scheduleFilter(state, filter.value.length === 0 ? 0 : FILTER_DELAY_MS);
     });
-    bar.append(filter, this.buildTypeFilter(doc, state), this.buildColorFilter(doc));
-    return bar;
+    filter.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        this.scheduleFilter(state, 0);
+      }
+    });
+    filters.append(filter, this.buildTypeFilter(doc, state), this.buildColorFilter(doc));
+
+    const toolbar = doc.createElement("div");
+    toolbar.className = "ac-toolbars";
+    toolbar.append(bar, filters);
+    return toolbar;
+  }
+
+  /** Apply the filter box's text after `delay` ms, restarting on each call. */
+  private scheduleFilter(state: PanelState, delay: number): void {
+    if (this.filterTimer !== null) {
+      clearTimeout(this.filterTimer);
+    }
+    this.filterTimer = setTimeout(() => {
+      this.filterTimer = null;
+      if (state.filter !== state.filterDraft) {
+        state.filter = state.filterDraft;
+        this.refresh();
+      }
+    }, delay);
   }
 
   /**

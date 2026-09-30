@@ -6,12 +6,19 @@ import {
   getAddon,
   onMainWindowLoad,
   onMainWindowUnload,
+  onRestoreFromPrefs,
   onShutdown,
   onStartup,
 } from "./hooks.js";
 
 const instance = {
-  hooks: { onStartup, onShutdown, onMainWindowLoad, onMainWindowUnload },
+  hooks: {
+    onStartup,
+    onShutdown,
+    onMainWindowLoad,
+    onMainWindowUnload,
+    onRestoreFromPrefs,
+  },
   getAddon,
 };
 

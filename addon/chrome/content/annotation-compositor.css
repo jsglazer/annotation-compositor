@@ -1,10 +1,18 @@
 /* Groups item-pane section. Loaded by the section body; no !important rules,
    so Zotero's own theming (including dark mode) still wins where it should. */
-.ac-toolbar {
+/* Buttons on one row, filters on the next; both wrap rather than clip, so
+   nothing can be pushed out of a narrow pane. */
+.ac-toolbar,
+.ac-filterbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
   padding: 4px 2px;
+}
+
+.ac-filterbar {
+  padding-top: 0;
 }
 
 .ac-button {

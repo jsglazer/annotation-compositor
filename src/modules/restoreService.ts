@@ -20,7 +20,8 @@ export class RestoreService {
     }
     const index = select(
       "Restore grouping",
-      "Choose a snapshot to restore:",
+      // Named, because this now runs from the settings pane, away from the item.
+      `Choose a snapshot to restore for “${item.getDisplayTitle()}”:`,
       stored.map(
         (entry) =>
           `${entry.snapshot.createdAt} — ${entry.snapshot.reason} (${entry.snapshot.entries.length} annotations)`,

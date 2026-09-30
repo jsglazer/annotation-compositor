@@ -11,7 +11,7 @@ import { getAnnotationItems } from "./adapters/annotations.js";
 import Addon from "./addon.js";
 import { assignNewAnnotations } from "./modules/autoAssign.js";
 import { NotifierService } from "./modules/notifier.js";
-import { GroupsPanel, SECTION_ID } from "./modules/panel.js";
+import { GroupsPanel } from "./modules/panel.js";
 import {
   PREF_KEYS,
   SYNCED_PREF_KEYS,
@@ -46,11 +46,6 @@ function buildAddon(): Addon {
       service: self.service,
       sticky: self.sticky,
       exportItem: (item, paths, options) => self.exports.run(item, paths, options),
-      restoreItem: async (item) => {
-        if (await self.restores.run(item)) {
-          panel.refresh();
-        }
-      },
     });
 
     const readerMenu = new ReaderMenuAdapter({
@@ -150,9 +145,12 @@ export async function onStartup(rootURI: string): Promise<void> {
 
   // Zotero's own "pin a section" feature, applied to our Groups panel so it
   // is the default item-pane view instead of Info. A single global pref, so
-  // this is opt-out (see the "pinGroupsPanel" preference).
-  if (getPinGroupsPanel()) {
-    Zotero.Prefs.set("pinnedPane", SECTION_ID);
+  // this is opt-out (see the "pinGroupsPanel" preference). It must hold the
+  // pane ID Zotero registered (namespaced with the plugin ID), not SECTION_ID —
+  // the bare ID matches no pane, so Zotero just cleared the pin again.
+  const paneID = addon.panel.paneID;
+  if (getPinGroupsPanel() && paneID !== null) {
+    Zotero.Prefs.set("pinnedPane", paneID);
   }
 
   // Unregistered automatically by Zotero when the plugin shuts down.
@@ -171,7 +169,7 @@ export async function onStartup(rootURI: string): Promise<void> {
         "",
         'Zotero\'s "Delete Automatic Tags in This Library" command can remove tags in bulk. Group tags are stored as MANUAL tags by default, which that command does not touch; if you switch them to automatic tags, keep snapshots in mind.',
         "",
-        "A snapshot is written before every change, and “Restore previous grouping” can put the structure back.",
+        "A snapshot is written before every change, and “Restore previous grouping…” (Settings → Annotation Compositor) can put the structure back.",
       ].join("\n"),
     );
     setWarningAcknowledged(true);
@@ -210,6 +208,51 @@ export function onMainWindowLoad(): void {
 
 export function onMainWindowUnload(): void {
   addon?.panel.refresh();
+}
+
+/**
+ * The item the user is looking at in the main window: the parent of the PDF
+ * open in the current reader tab, else the first selected library item.
+ */
+function currentItem(): Zotero.Item | null {
+  const win = Zotero.getMainWindow() as unknown as {
+    Zotero_Tabs?: { selectedID: string; selectedType: string };
+    ZoteroPane?: { getSelectedItems(): Zotero.Item[] };
+  };
+  const tabs = win.Zotero_Tabs;
+  if (tabs !== undefined && tabs.selectedType !== "library") {
+    const reader = Zotero.Reader.getByTabID(tabs.selectedID);
+    const attachment =
+      reader?.itemID === undefined ? false : Zotero.Items.get(reader.itemID);
+    if (attachment) {
+      return attachment.parentItem ?? attachment;
+    }
+  }
+  const selected = win.ZoteroPane?.getSelectedItems() ?? [];
+  const item = selected.find((entry) => entry.isRegularItem() || entry.isAttachment());
+  return item ?? null;
+}
+
+/**
+ * "Restore previous grouping…" in the plugin's settings pane. It used to be a
+ * panel toolbar button; from the settings pane it acts on whatever item is
+ * current in the main window.
+ */
+export async function onRestoreFromPrefs(): Promise<void> {
+  if (addon === null) {
+    return;
+  }
+  const item = currentItem();
+  if (item === null) {
+    alert(
+      "Restore grouping",
+      "Select an item in your library (or open its PDF) first, then click Restore again.",
+    );
+    return;
+  }
+  if (await addon.restores.run(item)) {
+    addon.panel.refresh();
+  }
 }
 
 /** Exposed for the "expand a stored folder key" path in tests and the console. */

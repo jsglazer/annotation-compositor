@@ -84,6 +84,19 @@
 
   <separator class="thin"></separator>
 
+  <!-- Moved here from the Groups panel toolbar. Acts on the item current in the
+       main window (the open PDF's item, else the selected library item). -->
+  <hbox align="center">
+    <button
+      id="annotationcompositor-pref-restoreGrouping"
+      data-l10n-id="pref-restore-grouping"
+      oncommand="Zotero.__addonInstance__.hooks.onRestoreFromPrefs()"
+    />
+  </hbox>
+  <description data-l10n-id="pref-restore-grouping-description"></description>
+
+  <separator class="thin"></separator>
+
   <checkbox
     id="annotationcompositor-pref-useCustomSelectionColor"
     preference="__prefsPrefix__.useCustomSelectionColor"
