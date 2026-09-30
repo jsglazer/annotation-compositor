@@ -16,9 +16,9 @@ Group tags are **automatic (type 1)** tags by default, so they stay out of the t
 
 ## Features
 
-- **Groups panel** in the item pane — nested folder tree with member counts and colour swatches, a collapsible derived _Ungrouped_ bucket, filter box, and expand/collapse all. Pinned as the item pane's default view on startup (toggleable), so it opens instead of Info
+- **Groups panel** in the item pane — nested folder tree with member counts and colour swatches, a collapsible derived _Ungrouped_ bucket, and expand/collapse all. The filters sit on their own row under the toolbar buttons: the text filter applies one second after you stop typing (Enter or clearing the box applies it at once) and keeps focus while you type. Pinned as the item pane's default view on startup (toggleable), so it opens instead of Info (this pin only takes effect from 1.0.12; earlier versions pinned a pane ID Zotero did not recognise)
 - **Annotation-type filter** — show only highlights, only underlines, only notes, and so on; every row also carries a one-glyph type mark, so a highlight and an underline are never two identical lines of text
-- **Colour filter** — Yellow, Red and Blue toggle buttons in the toolbar show only annotations of those colours; any combination can be on at once, and **×** clears them. The filter applies to every folder and follows you from item to item until cleared (it resets when Zotero restarts)
+- **Colour filter** — Yellow, Red and Blue toggle buttons in the filter row show only annotations of those colours; any combination can be on at once, and **×** clears them. The filter applies to every folder and follows you from item to item until cleared (it resets when Zotero restarts)
 - **Keyboard navigation** — with the panel focused, **↑/↓** step to the previous/next annotation (Shift extends the selection) and the reader jumps there just as a click does; focus comes back to the panel after the jump so you can keep stepping. The `arrowKeysScroll` preference restores plain scrolling
 - **Multi-folder membership** — an annotation belongs to every folder you put it in
 - **Drag and drop** — dragging an annotation onto a folder **moves** it (adds the destination, removes the source, in one transaction); **⌘-drag** (Alt elsewhere) **adds** without removing. Dragging a folder onto another nests it — that folder and its whole subtree — and dropping it on the empty space below the tree returns it to the top level. The folder context menu carries the same moves for anyone who would rather not drag
@@ -32,7 +32,7 @@ Group tags are **automatic (type 1)** tags by default, so they stay out of the t
 - **Sticky group** — pin a folder to an item so that item's new annotations join it automatically; the pinned folder is marked 📌 in the tree, the new-folder dialog can pin as it creates, and the pin is optionally persisted across sessions
 - **Settings sync** — preferences ride along with your Zotero account in a tagged standalone note (“Annotation Compositor settings”, tag `_annotation-compositor-settings`) in My Library, so a second machine picks up your prefix, templates and colours through ordinary Zotero sync. On the first machine the note is created about a minute after startup, giving Zotero's own startup sync time to bring down an existing note first; if two machines ever create one each, the newest wins and the other goes to the Trash. Leave the note in place. Pinned folders stay local, as working state rather than a setting. (Zotero's synced-settings store is not usable for this: its server rejects unknown keys and fails the whole sync, which is what 1.0.8 and earlier ran into. 1.0.9 removes the leftover key automatically.)
 - **Templated export** — Mustache-subset templates (`{{var}}`, `{{#section}}`, `{{^inverted}}`, self-referencing partials for subfolder traversal) with Markdown and HTML defaults, include-subfolders and include-ungrouped toggles (only asked when they would change the result, so an item whose annotations are all still Ungrouped exports straight away), ordering by `annotationSortIndex`, defaulting to file (clipboard is the other option). Each annotation renders the same `{text} (Color: page)` format as double-click copy. The document title uses the item's Better BibTeX citation key when one is available, falling back to its display title. **⤓** exports the selected folders (all of them when none is selected); **⇊ Export all** exports every folder with its subfolders plus Ungrouped, without any questions
-- **Snapshots** — a rolling JSON snapshot is written before every group-tag write, to `<Zotero data directory>/annotation-compositor/snapshots/`. **Restore previous grouping** shows a diff preview before it writes, and is the undo path
+- **Snapshots** — a rolling JSON snapshot is written before every group-tag write, to `<Zotero data directory>/annotation-compositor/snapshots/`. **Restore previous grouping…** (Settings → Annotation Compositor) shows a diff preview before it writes, and is the undo path. It acts on the item whose PDF is open in the current reader tab, or the item selected in your library
 
 ## Installation
 
@@ -41,6 +41,10 @@ Group tags are **automatic (type 1)** tags by default, so they stay out of the t
 1. Download `annotation-compositor.xpi` from the [releases page](https://github.com/jsglazer/annotation-compositor/releases)
 2. In Zotero: **Tools → Plugins → gear icon → Install Plugin From File**
 3. Select the downloaded `.xpi` and restart Zotero
+
+## Troubleshooting
+
+If Zotero's own Tags, Related, Notes or Libraries and Collections sections lose their **+** button on an editable item, the Groups panel puts them back to editable and writes an `[annotation-compositor] editable pane had read-only sections` entry to Zotero's error console (once per session; every occurrence goes to Help → Debug Output Logging). If **+** is missing and no such entry appears, please open an issue saying which sections and which pane (library or reader).
 
 ## Folder names
 
