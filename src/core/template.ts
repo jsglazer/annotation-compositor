@@ -30,6 +30,8 @@ export interface RenderOptions {
   readonly partials?: Readonly<Record<string, string>>;
   /** Guard against a runaway self-referencing partial. */
   readonly maxDepth?: number;
+  /** Escaper for `{{name}}`; HTML escaping by default (TeX output passes its own). */
+  readonly escape?: (value: string) => string;
 }
 
 export class TemplateError extends Error {}
@@ -155,6 +157,7 @@ function renderNodes(
   depth: number,
   maxDepth: number,
   cache: Map<string, Node[]>,
+  escape: (value: string) => string,
 ): string {
   if (depth > maxDepth) {
     throw new TemplateError(`Template recursion exceeded ${maxDepth} levels.`);
@@ -167,7 +170,7 @@ function renderNodes(
         break;
       case "var": {
         const raw = stringify(lookup(stack, node.name));
-        out += node.escape ? escapeHtml(raw) : raw;
+        out += node.escape ? escape(raw) : raw;
         break;
       }
       case "section": {
@@ -181,6 +184,7 @@ function renderNodes(
               depth + 1,
               maxDepth,
               cache,
+              escape,
             );
           }
           break;
@@ -198,12 +202,21 @@ function renderNodes(
               depth + 1,
               maxDepth,
               cache,
+              escape,
             );
             stack.pop();
           }
         } else {
           stack.push(value);
-          out += renderNodes(node.children, stack, partials, depth + 1, maxDepth, cache);
+          out += renderNodes(
+            node.children,
+            stack,
+            partials,
+            depth + 1,
+            maxDepth,
+            cache,
+            escape,
+          );
           stack.pop();
         }
         break;
@@ -218,7 +231,7 @@ function renderNodes(
           parsed = parseTemplate(source);
           cache.set(node.name, parsed);
         }
-        out += renderNodes(parsed, stack, partials, depth + 1, maxDepth, cache);
+        out += renderNodes(parsed, stack, partials, depth + 1, maxDepth, cache, escape);
         break;
       }
     }
@@ -240,5 +253,6 @@ export function renderTemplate(
     0,
     options.maxDepth ?? 64,
     new Map<string, Node[]>(),
+    options.escape ?? escapeHtml,
   );
 }

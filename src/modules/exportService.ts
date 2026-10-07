@@ -8,6 +8,8 @@
 import { buildExportContext } from "../core/exportModel.js";
 import { renderTemplate, TemplateError } from "../core/template.js";
 import { TEMPLATE_PRESETS, findPreset } from "../core/defaultTemplates.js";
+import { escaperFor } from "../core/entryFormat.js";
+import { renderPreamble } from "../core/texPreamble.js";
 import type { TemplatePreset } from "../core/defaultTemplates.js";
 import type { FolderPath } from "../core/types.js";
 import { confirm, select } from "../adapters/dialogs.js";
@@ -16,8 +18,12 @@ import { getCustomColorLabels } from "../adapters/colorLabels.js";
 import type { GroupService } from "./groupService.js";
 import { groupPaths } from "../core/path.js";
 import {
+  getEntryFormat,
+  getLabelFilter,
   getTagPrefix,
   getTemplateId,
+  getTexPageBreak,
+  getTexPreamble,
   setIncludeSubfolders,
   setIncludeUngrouped,
   setTemplateId,
@@ -48,14 +54,25 @@ export class ExportService {
     includeUngrouped = false,
   ): Promise<string> {
     const colorLabels = await getCustomColorLabels();
+    const title = exportTitle(item);
     const context = buildExportContext(this.service.load(item).records, getTagPrefix(), {
       selectedPaths,
       includeSubfolders,
       includeUngrouped,
-      title: exportTitle(item),
+      title,
       colorLabels,
+      entryFormat: getEntryFormat(),
+      entryEscape: preset.escape,
+      labelFilter: getLabelFilter(),
+      pageBreak: getTexPageBreak(),
     });
-    return renderTemplate(preset.template, context, { partials: preset.partials });
+    const preamble =
+      preset.standaloneTex === true ? renderPreamble(getTexPreamble(), title) : "";
+    return renderTemplate(
+      preset.template,
+      { ...context, preamble },
+      { partials: preset.partials, escape: escaperFor(preset.escape) },
+    );
   }
 
   /**
@@ -78,15 +95,22 @@ export class ExportService {
       ztoolkit.notify("Annotation Compositor", "Nothing to export.", false);
       return;
     }
+    // The default template from Settings is listed first, so it is the
+    // dialog's pre-selected choice.
+    const preferred = findPreset(getTemplateId());
+    const ordered = [
+      preferred,
+      ...TEMPLATE_PRESETS.filter((preset) => preset.id !== preferred.id),
+    ];
     const presetIndex = select(
       "Export annotations",
       "Template:",
-      TEMPLATE_PRESETS.map((preset) => preset.label),
+      ordered.map((preset) => preset.label),
     );
     if (presetIndex === null) {
       return;
     }
-    const preset = TEMPLATE_PRESETS[presetIndex] ?? findPreset(getTemplateId());
+    const preset = ordered[presetIndex] ?? preferred;
     setTemplateId(preset.id);
 
     // Questions that cannot change the result are not asked: there are no
@@ -143,7 +167,7 @@ export class ExportService {
       return;
     }
     if (destination === 1) {
-      if (preset.id === "html") {
+      if (preset.escape === "html") {
         ztoolkit.copyHTML(output, output);
       } else {
         ztoolkit.copyText(output);

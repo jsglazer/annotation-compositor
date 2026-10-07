@@ -3,6 +3,13 @@
  * nothing else reads `Zotero.Prefs` directly.
  */
 import { normalizePrefix } from "../core/path.js";
+import {
+  DEFAULT_ENTRY_FORMAT,
+  normalizeLabelFilterMode,
+  parseLabelList,
+} from "../core/entryFormat.js";
+import type { LabelFilter } from "../core/entryFormat.js";
+import { DEFAULT_TEX_PREAMBLE } from "../core/texPreamble.js";
 import { TAG_TYPE_AUTOMATIC, TAG_TYPE_MANUAL } from "../core/types.js";
 import type { ColorRule, FolderPath, TagType } from "../core/types.js";
 
@@ -29,6 +36,11 @@ export const PREF_KEYS = {
   stickyOnCreate: `${BRANCH}.stickyOnCreate`,
   syncSettings: `${BRANCH}.syncSettings`,
   pinGroupsPanel: `${BRANCH}.pinGroupsPanel`,
+  entryFormat: `${BRANCH}.entryFormat`,
+  labelFilterMode: `${BRANCH}.labelFilterMode`,
+  labelFilter: `${BRANCH}.labelFilter`,
+  texPageBreak: `${BRANCH}.texPageBreak`,
+  texPreamble: `${BRANCH}.texPreamble`,
 } as const;
 
 /**
@@ -52,6 +64,11 @@ export const SYNCED_PREF_KEYS = [
   PREF_KEYS.selectionColor,
   PREF_KEYS.stickyOnCreate,
   PREF_KEYS.pinGroupsPanel,
+  PREF_KEYS.entryFormat,
+  PREF_KEYS.labelFilterMode,
+  PREF_KEYS.labelFilter,
+  PREF_KEYS.texPageBreak,
+  PREF_KEYS.texPreamble,
 ] as const;
 
 export const DEFAULT_TAG_PREFIX = "grp";
@@ -172,6 +189,29 @@ export function getIncludeUngrouped(): boolean {
 
 export function setIncludeUngrouped(value: boolean): void {
   Zotero.Prefs.set(PREF_KEYS.includeUngrouped, value, true);
+}
+
+/** One-line format for each exported annotation (see `core/entryFormat.ts`). */
+export function getEntryFormat(): string {
+  return readString(PREF_KEYS.entryFormat, DEFAULT_ENTRY_FORMAT);
+}
+
+/** Which colour labels an export keeps: none filtered, only these, or all but these. */
+export function getLabelFilter(): LabelFilter {
+  return {
+    mode: normalizeLabelFilterMode(readString(PREF_KEYS.labelFilterMode, "off")),
+    labels: parseLabelList(readString(PREF_KEYS.labelFilter, "")),
+  };
+}
+
+/** TeX exports start every top-level group on a new page. */
+export function getTexPageBreak(): boolean {
+  return readBool(PREF_KEYS.texPageBreak, false);
+}
+
+/** The LaTeX preamble of a TeX export; blank means the shipped default. */
+export function getTexPreamble(): string {
+  return readString(PREF_KEYS.texPreamble, DEFAULT_TEX_PREAMBLE);
 }
 
 export function getUseCustomSelectionColor(): boolean {

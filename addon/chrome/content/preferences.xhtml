@@ -127,8 +127,72 @@
     >
       <menupopup>
         <menuitem value="markdown" data-l10n-id="pref-template-markdown"></menuitem>
+        <menuitem
+          value="markdown-labels"
+          data-l10n-id="pref-template-markdown-labels"
+        ></menuitem>
         <menuitem value="html" data-l10n-id="pref-template-html"></menuitem>
+        <menuitem value="tex" data-l10n-id="pref-template-tex"></menuitem>
+        <menuitem value="tex-labels" data-l10n-id="pref-template-tex-labels"></menuitem>
       </menupopup>
     </menulist>
   </hbox>
+
+  <hbox align="center">
+    <html:label
+      for="annotationcompositor-pref-entryFormat"
+      data-l10n-id="pref-entry-format-label"
+    ></html:label>
+    <html:input
+      type="text"
+      id="annotationcompositor-pref-entryFormat"
+      style="flex: 1; min-width: 20em"
+      preference="__prefsPrefix__.entryFormat"
+    ></html:input>
+  </hbox>
+  <description data-l10n-id="pref-entry-format-description"></description>
+
+  <hbox align="center">
+    <html:label
+      for="annotationcompositor-pref-labelFilterMode"
+      data-l10n-id="pref-label-filter-mode-label"
+    ></html:label>
+    <menulist
+      id="annotationcompositor-pref-labelFilterMode"
+      preference="__prefsPrefix__.labelFilterMode"
+    >
+      <menupopup>
+        <menuitem value="off" data-l10n-id="pref-label-filter-off"></menuitem>
+        <menuitem value="include" data-l10n-id="pref-label-filter-include"></menuitem>
+        <menuitem value="exclude" data-l10n-id="pref-label-filter-exclude"></menuitem>
+      </menupopup>
+    </menulist>
+    <html:input
+      type="text"
+      id="annotationcompositor-pref-labelFilter"
+      style="flex: 1; min-width: 20em"
+      preference="__prefsPrefix__.labelFilter"
+    ></html:input>
+  </hbox>
+  <description data-l10n-id="pref-label-filter-description"></description>
+
+  <separator class="thin"></separator>
+
+  <checkbox
+    id="annotationcompositor-pref-texPageBreak"
+    preference="__prefsPrefix__.texPageBreak"
+    data-l10n-id="pref-tex-page-break"
+  />
+  <html:label
+    for="annotationcompositor-pref-texPreamble"
+    data-l10n-id="pref-tex-preamble-label"
+  ></html:label>
+  <html:textarea
+    id="annotationcompositor-pref-texPreamble"
+    style="width: 100%; box-sizing: border-box; font-family: monospace"
+    rows="12"
+    spellcheck="false"
+    preference="__prefsPrefix__.texPreamble"
+  ></html:textarea>
+  <description data-l10n-id="pref-tex-preamble-description"></description>
 </groupbox>

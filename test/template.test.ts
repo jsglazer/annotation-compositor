@@ -118,18 +118,20 @@ describe("shipped presets carry annotation comments", () => {
         selectedPaths: [["A"]],
         includeUngrouped: true,
       }),
-      preset.partials,
+      { partials: preset.partials },
     );
 
   it("emits comments for grouped AND ungrouped annotations (markdown)", () => {
     const out = render(MARKDOWN_PRESET);
-    expect(out).toContain("grouped note");
+    // "  - grouped" / ">grouped": "grouped note" alone is a substring of "ungrouped note".
+    expect(out).toMatch(/[\s>]grouped note/);
     expect(out).toContain("ungrouped note");
   });
 
   it("emits comments for grouped AND ungrouped annotations (html)", () => {
     const out = render(HTML_PRESET);
-    expect(out).toContain("grouped note");
+    // "  - grouped" / ">grouped": "grouped note" alone is a substring of "ungrouped note".
+    expect(out).toMatch(/[\s>]grouped note/);
     expect(out).toContain("ungrouped note");
   });
 });

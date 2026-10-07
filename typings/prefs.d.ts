@@ -24,6 +24,11 @@ declare namespace _ZoteroTypes {
       "stickyOnCreate": boolean;
       "syncSettings": boolean;
       "pinGroupsPanel": boolean;
+      "entryFormat": string;
+      "labelFilterMode": string;
+      "labelFilter": string;
+      "texPageBreak": boolean;
+      "texPreamble": string;
     };
   }
 }
