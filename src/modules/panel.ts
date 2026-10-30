@@ -29,6 +29,7 @@ import {
 import { ANNOTATION_TYPES } from "../core/types.js";
 import type { AnnotationRecord, FolderNode, FolderPath, UiState } from "../core/types.js";
 import { resolveColorLabel } from "../core/colorNames.js";
+import { formatRowPage, truncateRowText } from "../core/rowLabel.js";
 import { confirm, promptText, promptTextChecked } from "../adapters/dialogs.js";
 import { getCustomColorLabels } from "../adapters/colorLabels.js";
 import { openPopupMenu } from "../adapters/popupMenu.js";
@@ -1054,16 +1055,19 @@ export class GroupsPanel {
 
     const text = doc.createElement("span");
     text.className = "ac-annotation-text";
-    text.textContent =
+    const fullText =
       annotation.text.length > 0
         ? annotation.text
         : annotation.comment.length > 0
           ? annotation.comment
           : `(${annotation.type})`;
+    // The row shows only the first 50 characters; the tooltip keeps the full text.
+    text.textContent = truncateRowText(fullText);
+    if (text.textContent !== fullText) text.title = fullText;
 
     const page = doc.createElement("span");
     page.className = "ac-page";
-    page.textContent = annotation.pageLabel;
+    page.textContent = formatRowPage(annotation.pageLabel);
 
     row.append(swatch, mark, text, page);
 
