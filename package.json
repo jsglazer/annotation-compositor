@@ -31,7 +31,7 @@
   },
   "homepage": "https://github.com/jsglazer/annotation-compositor",
   "dependencies": {
-    "zotero-plugin-toolkit": "^5.1.0"
+    "zotero-plugin-toolkit": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
